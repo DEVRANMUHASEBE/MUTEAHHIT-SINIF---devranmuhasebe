@@ -28,6 +28,39 @@ BUILDING_CLASSES = {
     "V-A": "İş merkezleri/ticari amaçlı yapılar (yapı yüksekliği 51,5 m ve üzeri)",
 }
 
+
+# 2026 Yapı Yaklaşık Birim Maliyetleri (TL/m²)
+# Resmî 2026 Yapım Müteahhitliği Yeterlik Tablosu / 03.02.2026 tebliği
+BUILDING_UNIT_COSTS = {
+    "II-B": 12500,
+    "II-C": 15100,
+    "III-A": 19800,
+    "III-B": 21050,
+    "III-C": 23400,
+    "IV-A": 26450,
+    "IV-B": 33900,
+    "IV-C": 40500,
+    "V-A": 42350,
+}
+
+# 2026 yılı asgari iş deneyim tutarları (TL)
+# H grubu için asgari iş deneyim tutarı şartı bulunmadığından fallback olarak kullanılır.
+WORK_EXPERIENCE_MIN = {
+    "A": 2476500000,
+    "B": 1733550000,
+    "B1": 1485900000,
+    "C": 1238250000,
+    "C1": 1031875000,
+    "D": 825500000,
+    "D1": 619125000,
+    "E": 412750000,
+    "E1": 247650000,
+    "F": 123825000,
+    "F1": 105251250,
+    "G": 86677500,
+    "G1": 61912500,
+}
+
 # Tek parselde üstlenilebilecek tek iş için azami toplam inşaat alanı (m²)
 MAX_M2 = {
     "A":  {k: None for k in BUILDING_CLASSES},
@@ -81,6 +114,19 @@ def best_joint_group(pilot_group, other_group):
 
 def fmt_m2(value):
     return f"{value:,.0f}".replace(",", ".") + " m²"
+
+def fmt_tl(value):
+    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " ₺"
+
+def work_experience_group(amount):
+    """Yalnızca 2026 asgari iş deneyim tutarına göre ulaşılabilen en yüksek grubu döndürür."""
+    for group in ["A", "B", "B1", "C", "C1", "D", "D1", "E", "E1", "F", "F1", "G", "G1"]:
+        if amount >= WORK_EXPERIENCE_MIN[group]:
+            return group
+    return "H"
+
+def building_class_label(code):
+    return f"{code} — {BUILDING_CLASSES[code]} — {BUILDING_UNIT_COSTS[code]:,.0f} TL/m²".replace(",", ".")
 
 # ---------------------------------------------------------
 # TASARIM
@@ -197,7 +243,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-allowed_pages = {"home", "m2", "joint"}
+allowed_pages = {"home", "m2", "joint", "experience"}
 page_from_query = st.query_params.get("page", "home")
 if page_from_query not in allowed_pages:
     page_from_query = "home"
@@ -236,6 +282,16 @@ if st.session_state.page == "home":
         <a class="click-card" href="?page=joint">
             <div class="title">2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</div>
             <div class="desc">Büyük ve küçük belge sınıfı olan ortakları seçin.</div>
+        </a>
+        ''',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '''
+        <a class="click-card" href="?page=experience">
+            <div class="title">3. Bitirdiğim inşaatlar ile hangi sınıfı alabilirim?</div>
+            <div class="desc">Son 5 yıldaki işlerinizin toplamını veya son 15 yıldaki tek işinizi kullanın.</div>
         </a>
         ''',
         unsafe_allow_html=True
@@ -365,3 +421,168 @@ elif st.session_state.page == "joint":
             })
         st.dataframe(rows, use_container_width=True, hide_index=True)
 
+
+
+# ---------------------------------------------------------
+# 3. BİTİRİLEN İNŞAATLARDAN BELGE SINIFI HESABI
+# ---------------------------------------------------------
+elif st.session_state.page == "experience":
+    if st.button("← Ana Sayfa", key="exp_home"):
+        go("home")
+
+    st.header("🏢 Bitirdiğim inşaatlar ile hangi sınıfı alabilirim?")
+
+    method = st.radio(
+        "Hesaplama yöntemini seçin",
+        [
+            "1 - Son 5 yılda bitirdiğim inşaatları toplayacağım",
+            "2 - Son 15 yılda bitirdiğim 1 inşaatı kullanacağım",
+        ],
+        key="experience_method",
+    )
+
+    st.caption(
+        "2026 güncel yapı yaklaşık birim maliyetleri otomatik kullanılır. "
+        "İnşaat alanını m² olarak girip güncel yapı sınıfını seçmeniz yeterlidir."
+    )
+
+    if method.startswith("1"):
+        st.subheader("Son 5 yılda bitirilen inşaatlar")
+
+        total_experience = 0.0
+        entered_rows = 0
+
+        for i in range(1, 11):
+            st.markdown(f"**{i}. İNŞAAT**")
+            col_area, col_class = st.columns([1, 2])
+
+            with col_area:
+                area = st.number_input(
+                    "İNŞAAT ALANI (m²)",
+                    min_value=0.0,
+                    step=1.0,
+                    value=0.0,
+                    key=f"exp5_area_{i}",
+                )
+
+            with col_class:
+                bclass = st.selectbox(
+                    "GÜNCEL İNŞAAT SINIFI",
+                    list(BUILDING_UNIT_COSTS.keys()),
+                    format_func=building_class_label,
+                    index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
+                    key=f"exp5_class_{i}",
+                )
+
+            if area > 0:
+                row_amount = area * BUILDING_UNIT_COSTS[bclass] * 0.85 * 0.90
+                total_experience += row_amount
+                entered_rows += 1
+                st.caption(
+                    f"{fmt_m2(area)} × "
+                    f"{fmt_tl(BUILDING_UNIT_COSTS[bclass]).replace(',00 ₺',' ₺')}/m² × "
+                    f"0,85 × 0,90 = **{fmt_tl(row_amount)}**"
+                )
+
+            if i < 10:
+                st.divider()
+
+        if entered_rows > 0:
+            result_group = work_experience_group(total_experience)
+
+            st.markdown(f"""
+            <div class="result-card">
+                <div><b>TOPLAM İŞ DENEYİM TUTARI</b></div>
+                <div class="result-number">{fmt_tl(total_experience)}</div>
+                <div>Asgari iş deneyim tutarına göre</div>
+                <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{result_group} GRUBU</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if result_group != "H":
+                st.success(
+                    f"Toplam tutarınız iş deneyimi yönünden **{result_group} grubu** için "
+                    f"2026 asgari iş deneyim tutarını karşılıyor."
+                )
+            else:
+                st.info(
+                    "Hesaplanan tutar G1 grubunun 2026 asgari iş deneyim tutarının altında kaldığı için "
+                    "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
+                )
+
+            st.warning(
+                "Önemli: Resmî değerlendirmede son 5 yıldaki işlerin toplamı için ayrıca "
+                "son 15 yıl içerisindeki en büyük iş deneyim miktarının üç katı üst sınırı uygulanabilir. "
+                "Bu ekranda, sizin istediğiniz şekilde girilen 10 işin doğrudan toplamı gösterilmektedir."
+            )
+        else:
+            st.info("Hesaplama için en az bir inşaatın alanını girin.")
+
+    else:
+        st.subheader("Son 15 yıldaki tek inşaat")
+
+        col_area, col_class = st.columns([1, 2])
+
+        with col_area:
+            area = st.number_input(
+                "İNŞAAT ALANI (m²)",
+                min_value=0.0,
+                step=1.0,
+                value=0.0,
+                key="exp15_area",
+            )
+
+        with col_class:
+            bclass = st.selectbox(
+                "GÜNCEL İNŞAAT SINIFI",
+                list(BUILDING_UNIT_COSTS.keys()),
+                format_func=building_class_label,
+                index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
+                key="exp15_class",
+            )
+
+        if area > 0:
+            base_amount = area * BUILDING_UNIT_COSTS[bclass] * 0.85 * 0.90
+            total_experience = base_amount * 2
+            result_group = work_experience_group(total_experience)
+
+            st.markdown(
+                f"**Hesap:** {fmt_m2(area)} × "
+                f"{fmt_tl(BUILDING_UNIT_COSTS[bclass]).replace(',00 ₺',' ₺')}/m² × "
+                f"0,85 × 0,90 × 2"
+            )
+
+            st.markdown(f"""
+            <div class="result-card">
+                <div><b>İŞ DENEYİM TUTARI</b></div>
+                <div class="result-number">{fmt_tl(total_experience)}</div>
+                <div>Asgari iş deneyim tutarına göre</div>
+                <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{result_group} GRUBU</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if result_group != "H":
+                st.success(
+                    f"İki kat dikkate alınan iş deneyim tutarı, iş deneyimi yönünden "
+                    f"**{result_group} grubu** için 2026 asgari tutarı karşılıyor."
+                )
+            else:
+                st.info(
+                    "Hesaplanan tutar G1 grubunun 2026 asgari iş deneyim tutarının altında kaldığı için "
+                    "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
+                )
+        else:
+            st.info("Hesaplama için inşaat alanını girin.")
+
+    with st.expander("2026 asgari iş deneyim tutarlarını göster"):
+        table_rows = [
+            {"Belge Grubu": group, "Asgari İş Deneyim Tutarı": fmt_tl(amount)}
+            for group, amount in WORK_EXPERIENCE_MIN.items()
+        ]
+        table_rows.append({"Belge Grubu": "H", "Asgari İş Deneyim Tutarı": "Asgari iş deneyimi aranmaz"})
+        st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+    st.caption(
+        "Sonuç yalnızca asgari iş deneyim tutarı kriterine göre hesaplanır. "
+        "Üst gruplarda ekonomik, mali, teknik personel ve diğer yeterlik şartları ayrıca aranabilir."
+    )
