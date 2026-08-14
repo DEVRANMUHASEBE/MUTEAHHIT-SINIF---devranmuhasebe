@@ -204,12 +204,12 @@ def _draw_pdf_footer(canvas, doc):
     # Logo
     if LOGO_PATH.exists():
         try:
-            logo_width = 42 * mm
-            logo_height = 26 * mm
+            logo_width = 84 * mm
+            logo_height = 52 * mm
             canvas.drawImage(
                 str(LOGO_PATH),
                 (page_width - logo_width) / 2,
-                10 * mm,
+                9 * mm,
                 width=logo_width,
                 height=logo_height,
                 preserveAspectRatio=True,
@@ -220,10 +220,10 @@ def _draw_pdf_footer(canvas, doc):
             pass
 
     regular_font, _ = _pdf_fonts()
-    canvas.setFont(regular_font, 6.9)
+    canvas.setFont(regular_font, 6.4)
     canvas.setFillColor(colors.HexColor("#5f6673"))
     footer_text = "Bu belgenin hazırlanması DEVRAN MÂLİ MÜŞAVİRLİK tarafından sağlanmıştır"
-    canvas.drawCentredString(page_width / 2, 6.0 * mm, footer_text)
+    canvas.drawCentredString(page_width / 2, 4.8 * mm, footer_text)
 
     canvas.restoreState()
 
@@ -250,7 +250,7 @@ def create_experience_pdf(
         rightMargin=11 * mm,
         leftMargin=11 * mm,
         topMargin=12 * mm,
-        bottomMargin=32 * mm,
+        bottomMargin=61 * mm,
         title="Müteahhitlik Sınıf Hesaplama",
         author="DEVRAN MÂLİ MÜŞAVİRLİK",
     )
@@ -260,8 +260,8 @@ def create_experience_pdf(
         "PDFTitle",
         parent=styles["Title"],
         fontName=font_bold,
-        fontSize=19,
-        leading=22,
+        fontSize=17,
+        leading=19,
         alignment=TA_LEFT,
         textColor=colors.black,
         spaceAfter=2,
@@ -270,8 +270,8 @@ def create_experience_pdf(
         "PDFSub",
         parent=styles["Normal"],
         fontName=font_regular,
-        fontSize=10.5,
-        leading=13,
+        fontSize=9.8,
+        leading=12,
         alignment=TA_LEFT,
         textColor=colors.black,
         spaceAfter=6,
@@ -326,8 +326,8 @@ def create_experience_pdf(
         "PDFValue",
         parent=styles["Normal"],
         fontName=font_bold,
-        fontSize=26,
-        leading=29,
+        fontSize=22,
+        leading=25,
         alignment=TA_CENTER,
         textColor=colors.black,
     )
@@ -381,13 +381,13 @@ def create_experience_pdf(
         ("FONTSIZE", (0, 0), (-1, -1), 10),
         ("LEADING", (0, 0), (-1, -1), 12),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(method_table)
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
     # Data table
     story.append(Paragraph("İNŞAAT BİLGİLERİ", section_style))
@@ -421,11 +421,11 @@ def create_experience_pdf(
         ("LEADING", (0, 0), (-1, -1), 11),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4.2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4.2),
     ]))
     story.append(info_table)
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
 
     # Result section
     left_result = Table(
@@ -442,23 +442,34 @@ def create_experience_pdf(
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
 
     min_text = "Asgari iş deneyimi aranmaz" if result_min_amount is None else fmt_tl(result_min_amount).replace(",00 ₺", " TL")
+    calc_text = fmt_tl(total_amount).replace(",00 ₺", " TL")
+
+    # Sağ taraf ikiye bölünür:
+    # ÜST = hesaplamanın gerçek sonucu / dikkate alınan iş deneyim tutarı
+    # ALT = çıkan belge grubunun o yılki asgari iş deneyim tutarı
     right_result = Table(
-        [[Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARI", center_bold)],
-         [Paragraph(min_text, value_style)],
-         [Paragraph(f"({result_group} Grubu)", center_bold)]],
+        [
+            [Paragraph("HESAPLAMA SONUCU", center_bold)],
+            [Paragraph(calc_text, value_style)],
+            [Paragraph("Dikkate alınan iş deneyim tutarı", center_bold)],
+            [Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARI", center_bold)],
+            [Paragraph(min_text, value_style)],
+            [Paragraph(f"({result_group} Grubu)", center_bold)],
+        ],
         colWidths=[122 * mm],
     )
     right_result.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("LINEABOVE", (0, 3), (-1, 3), 0.8, colors.black),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.4),
     ]))
 
     result_table = Table([[left_result, right_result]], colWidths=[55 * mm, 125 * mm], hAlign="LEFT")
@@ -466,7 +477,7 @@ def create_experience_pdf(
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(result_table)
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
 
     note_box = Table(
         [[Paragraph("<b>Önemli Not:</b> Bu rapor bilgilendirme amaçlıdır. Resmî başvurularda ilgili mevzuat hükümleri ve idare değerlendirmesi esastır.", small_style)]],
@@ -481,7 +492,7 @@ def create_experience_pdf(
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(note_box)
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
     footer_left = Paragraph(
         f"<b>Düzenleme Tarihi</b><br/>{datetime.now().strftime('%d.%m.%Y')}",
         small_style
@@ -496,7 +507,7 @@ def create_experience_pdf(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.black),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(footer_table)
