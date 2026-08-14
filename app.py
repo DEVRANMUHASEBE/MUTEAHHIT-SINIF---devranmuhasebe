@@ -1,0 +1,318 @@
+import streamlit as st
+
+st.set_page_config(
+    page_title="Müteahhitlik Sınıf Hesaplama",
+    page_icon="🏗️",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
+
+# ---------------------------------------------------------
+# 2026 VERİLERİ
+# Kaynak:
+# Çevre, Şehircilik ve İklim Değişikliği Bakanlığı
+# 2026 Yapım Müteahhitliği Yeterlik Tablosu
+# ---------------------------------------------------------
+
+GROUPS = ["A", "B", "B1", "C", "C1", "D", "D1", "E", "E1", "F", "F1", "G", "G1", "H"]
+
+BUILDING_CLASSES = {
+    "II-B": "Basit yapılar, küçük depo/atölye benzeri yapılar",
+    "II-C": "Standartları biraz daha yüksek basit yapılar",
+    "III-A": "Basit konut ve benzeri yapılar",
+    "III-B": "Konut yapıları (yapı yüksekliği 21,5 m'ye kadar)",
+    "III-C": "Konut yapıları (yapı yüksekliği 21,5 m ile 30,5 m arası)",
+    "IV-A": "Konut (yapı yüksekliği 30,5 m ile 51,5 m arası) • Alışveriş merkezleri (brüt inşaat alanı 25.000 m²'nin altı) • İş merkezleri/ticari amaçlı yapılar (yapı yüksekliği 21,5 m ile 30,5 m arası)",
+    "IV-B": "Konut yapıları (yapı yüksekliği 51,5 m'den yukarı) • Düğün salonu • İş merkezleri/ticari amaçlı yapılar (yapı yüksekliği 30,5 m ile 51,5 m arası)",
+    "IV-C": "Alışveriş merkezleri (brüt inşaat alanı 25.000 m²'nin üzeri yapılar)",
+    "V-A": "İş merkezleri/ticari amaçlı yapılar (yapı yüksekliği 51,5 m ve üzeri)",
+}
+
+# Tek parselde üstlenilebilecek tek iş için azami toplam inşaat alanı (m²)
+MAX_M2 = {
+    "A":  {k: None for k in BUILDING_CLASSES},
+    "B":  {"II-B":138684, "II-C":114805, "III-A":87553, "III-B":82354, "III-C":74083, "IV-A":65541, "IV-B":51137, "IV-C":42804, "V-A":40934},
+    "B1": {"II-B":118872, "II-C":98404,  "III-A":75045, "III-B":70589, "III-C":63500, "IV-A":56178, "IV-B":43832, "IV-C":36689, "V-A":35086},
+    "C":  {"II-B":99060,  "II-C":82003,  "III-A":62538, "III-B":58824, "III-C":52917, "IV-A":46815, "IV-B":36527, "IV-C":30574, "V-A":29238},
+    "C1": {"II-B":82550,  "II-C":68336,  "III-A":52115, "III-B":49020, "III-C":44097, "IV-A":39012, "IV-B":30439, "IV-C":25478, "V-A":24365},
+    "D":  {"II-B":66040,  "II-C":54669,  "III-A":41692, "III-B":39216, "III-C":35278, "IV-A":31210, "IV-B":24351, "IV-C":20383, "V-A":19492},
+    "D1": {"II-B":49530,  "II-C":41002,  "III-A":31269, "III-B":29412, "III-C":26458, "IV-A":23407, "IV-B":18263, "IV-C":15287, "V-A":14619},
+    "E":  {"II-B":37973,  "II-C":31435,  "III-A":23973, "III-B":22549, "III-C":20285, "IV-A":17946, "IV-B":14002, "IV-C":11720, "V-A":11208},
+    "E1": {"II-B":26416,  "II-C":21868,  "III-A":16677, "III-B":15686, "III-C":14111, "IV-A":12484, "IV-B":9740,  "IV-C":8153,  "V-A":7797},
+    "F":  {"II-B":19812,  "II-C":16401,  "III-A":12508, "III-B":11765, "III-C":10583, "IV-A":9363,  "IV-B":7305,  "IV-C":6115,  "V-A":5848},
+    "F1": {"II-B":14735,  "II-C":12198,  "III-A":9303,  "III-B":8750,  "III-C":7871,  "IV-A":6964,  "IV-B":5433,  "IV-C":4548,  "V-A":4349},
+    "G":  {"II-B":10401,  "II-C":8610,   "III-A":6566,  "III-B":6177,  "III-C":5556,  "IV-A":4916,  "IV-B":3835,  "IV-C":3210,  "V-A":3070},
+    "G1": {"II-B":7430,   "II-C":6150,   "III-A":4690,  "III-B":4412,  "III-C":3969,  "IV-A":3511,  "IV-B":2739,  "IV-C":2293,  "V-A":2193},
+    "H":  {"II-B":3538,   "II-C":2929,   "III-A":2233,  "III-B":2101,  "III-C":1890,  "IV-A":1672,  "IV-B":1305,  "IV-C":1092,  "V-A":1044},
+}
+
+# 2026 resmi yeterlik tablosundaki "İş Ortaklığı" sütunları:
+# hedef_grup: (pilot ortağın en az grubu, diğer ortağın en az grubu)
+JOINT_REQUIREMENTS = {
+    "A":  ("B1", "E1"),
+    "B":  ("C",  "E1"),
+    "B1": ("C1", "E1"),
+    "C":  ("D",  "F"),
+    "C1": ("D1", "F1"),
+    "D":  ("D1", "G"),
+    "D1": ("E",  "G1"),
+    "E":  ("E1", "G1"),
+    "E1": ("E1", "H"),
+    "F":  ("G",  "H"),
+    "F1": ("G",  "H"),
+    "G":  ("G1", "H"),
+    "G1": ("G1", "H"),
+    "H":  ("H",  "H"),
+}
+
+GROUP_RANK = {group: i for i, group in enumerate(GROUPS)}
+
+def group_meets(actual, minimum):
+    """Daha üst bir grup, alt grup şartını da karşılar."""
+    return GROUP_RANK[actual] <= GROUP_RANK[minimum]
+
+def best_joint_group(pilot_group, other_group):
+    """İki ortak için 2026 resmi iş ortaklığı tablosuna göre ulaşılabilen en yüksek grubu bulur."""
+    for target in GROUPS:
+        pilot_min, other_min = JOINT_REQUIREMENTS[target]
+        if group_meets(pilot_group, pilot_min) and group_meets(other_group, other_min):
+            return target, pilot_min, other_min
+    return "H", "H", "H"
+
+def fmt_m2(value):
+    return f"{value:,.0f}".replace(",", ".") + " m²"
+
+# ---------------------------------------------------------
+# TASARIM
+# ---------------------------------------------------------
+
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(180deg, #f7f9fc 0%, #ffffff 50%);
+    }
+
+    .block-container {
+        max-width: 850px;
+        padding-top: 1.7rem;
+        padding-bottom: 3rem;
+    }
+
+    .hero {
+        padding: 1.4rem 1.2rem;
+        border-radius: 22px;
+        background: #172033;
+        color: white;
+        margin-bottom: 1.3rem;
+        box-shadow: 0 8px 24px rgba(0,0,0,.10);
+    }
+
+    .hero h1 {
+        font-size: 1.85rem;
+        margin: 0 0 .3rem 0;
+    }
+
+    .hero p {
+        margin: 0;
+        opacity: .86;
+        font-size: .98rem;
+    }
+
+    .question-card {
+        padding: 1rem 1.05rem;
+        border: 1px solid #e6e9ef;
+        border-radius: 18px;
+        background: white;
+        margin-bottom: .7rem;
+        box-shadow: 0 4px 16px rgba(0,0,0,.04);
+    }
+
+    .result-card {
+        padding: 1.25rem;
+        border-radius: 20px;
+        background: #eef8f1;
+        border: 1px solid #cde7d4;
+        text-align: center;
+        margin: 1rem 0;
+    }
+
+    .result-number {
+        font-size: 2.25rem;
+        font-weight: 800;
+        line-height: 1.15;
+        margin: .4rem 0;
+    }
+
+    .joint-result {
+        padding: 1.2rem;
+        border-radius: 20px;
+        background: #eef4ff;
+        border: 1px solid #cbdcf8;
+        text-align: center;
+        margin: 1rem 0;
+    }
+
+    .small-note {
+        font-size: .84rem;
+        opacity: .75;
+    }
+
+    div.stButton > button {
+        border-radius: 14px;
+        min-height: 3.2rem;
+        font-weight: 700;
+        width: 100%;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+
+def go(page):
+    st.session_state.page = page
+    st.rerun()
+
+st.markdown("""
+<div class="hero">
+    <h1>🏗️ Müteahhitlik Sınıf Hesaplama</h1>
+    <p>2026 yılı yapı müteahhitliği yetki belge grupları için hızlı hesaplama</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# ANA EKRAN
+# ---------------------------------------------------------
+if st.session_state.page == "home":
+    st.subheader("Ne hesaplamak istiyorsunuz?")
+
+    st.markdown('<div class="question-card"><b>1. Mevcut sınıfım ile kaç m² inşaat yapabilirim?</b><br><span class="small-note">Yetki belge grubunuzu ve yapı sınıfını seçin.</span></div>', unsafe_allow_html=True)
+    if st.button("📐 m² Sınırını Hesapla", use_container_width=True, type="primary"):
+        go("m2")
+
+    st.markdown('<div class="question-card"><b>2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</b><br><span class="small-note">İki ortağın gruplarını ve pilot ortağı seçin.</span></div>', unsafe_allow_html=True)
+    if st.button("🤝 Ortaklık Grubunu Hesapla", use_container_width=True):
+        go("joint")
+
+    st.divider()
+    st.caption("Veriler: Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 Yapım Müteahhitliği Yeterlik Tablosu.")
+    st.caption("Bilgilendirme amaçlıdır. Resmî başvuru/ruhsat işlemlerinde güncel YAMBİS ve ilgili idare kayıtları esas alınmalıdır.")
+
+# ---------------------------------------------------------
+# 1. M² HESAPLAMA
+# ---------------------------------------------------------
+elif st.session_state.page == "m2":
+    if st.button("← Ana Sayfa"):
+        go("home")
+
+    st.header("📐 Mevcut sınıfımla kaç m² yapabilirim?")
+
+    group = st.selectbox(
+        "Müteahhitlik yetki belge grubunuz",
+        GROUPS,
+        index=GROUPS.index("H"),
+    )
+
+    building_class = st.selectbox(
+        "Yapının sınıfı",
+        list(BUILDING_CLASSES.keys()),
+        format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
+    )
+
+    st.info(f"**{building_class}:** {BUILDING_CLASSES[building_class]}")
+
+    if st.button("HESAPLA", type="primary", use_container_width=True):
+        limit = MAX_M2[group][building_class]
+
+        if group == "A":
+            st.markdown(f"""
+            <div class="result-card">
+                <div><b>{group} Grubu • {building_class}</b></div>
+                <div class="result-number">SINIRSIZ</div>
+                <div>Resmî 2026 tablosunda A grubu için m² sınırı bulunmuyor.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="result-card">
+                <div><b>{group} Grubu • {building_class}</b></div>
+                <div class="result-number">{fmt_m2(limit)}</div>
+                <div>Tek parselde üstlenilebilecek azami toplam inşaat alanı</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.warning(
+            "Bu değer **tek parseldeki toplam inşaat metrekaresi** içindir. "
+            "Resmî 2026 tablosuna göre, tabloda belirtilen m² sınırı aşılmamak kaydıyla "
+            "farklı ada/parsellerde yapılabilecek iş adedi için ayrıca bir sınır belirtilmemiştir."
+        )
+
+# ---------------------------------------------------------
+# 2. İŞ ORTAKLIĞI / SINIF BİRLEŞTİRME
+# ---------------------------------------------------------
+elif st.session_state.page == "joint":
+    if st.button("← Ana Sayfa"):
+        go("home")
+
+    st.header("🤝 Sınıfları birleştirirsem hangi sınıf olur?")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        group1 = st.selectbox("1. Ortağın grubu", GROUPS, index=GROUPS.index("G"), key="g1")
+    with col2:
+        group2 = st.selectbox("2. Ortağın grubu", GROUPS, index=GROUPS.index("H"), key="g2")
+
+    pilot_choice = st.radio(
+        "Pilot ortak hangisi?",
+        ["1. Ortak", "2. Ortak"],
+        horizontal=True,
+    )
+
+    if pilot_choice == "1. Ortak":
+        pilot_group, other_group = group1, group2
+        pilot_label, other_label = "1. Ortak", "2. Ortak"
+    else:
+        pilot_group, other_group = group2, group1
+        pilot_label, other_label = "2. Ortak", "1. Ortak"
+
+    st.caption(
+        "Not: Yönetmelik uygulamasında yüksek hisseye sahip ortak pilot ortaktır. "
+        "Hisseler eşitse, aksi beyan edilmedikçe belge grubu yüksek olan ortak pilot kabul edilir."
+    )
+
+    if st.button("ORTAKLIK GRUBUNU BUL", type="primary", use_container_width=True):
+        result, required_pilot, required_other = best_joint_group(pilot_group, other_group)
+
+        st.markdown(f"""
+        <div class="joint-result">
+            <div><b>{pilot_label}: {pilot_group} (Pilot) &nbsp; + &nbsp; {other_label}: {other_group}</b></div>
+            <div style="margin-top:.6rem;">Ulaşılabilecek en yüksek ortaklık grubu</div>
+            <div class="result-number">{result} GRUBU</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.success(
+            f"**{result} grubu** için 2026 tablosundaki asgari eşleşme: "
+            f"Pilot ortak **en az {required_pilot}**, diğer ortak **en az {required_other}**."
+        )
+
+        if group1 != group2:
+            swapped_result, _, _ = best_joint_group(other_group, pilot_group)
+            if swapped_result != result:
+                st.info(
+                    f"Pilot ortak değiştirilirse sonuç **{swapped_result} grubu** olur. "
+                    "Ortaklık/hisse yapınız uygunsa pilot seçimini buna göre ayrıca kontrol edin."
+                )
+
+        st.warning(
+            "Bu hesap yalnızca seçilen iki ortağın mevcut yetki belge grupları üzerinden "
+            "2026 iş ortaklığı yeterlik tablosunu uygular. Ortaklık oranı, iş deneyim belgeleri, "
+            "YAMBİS kayıtları ve diğer başvuru şartları resmî değerlendirmede ayrıca kontrol edilir."
+        )
+
+    with st.expander("2026 iş ortaklığı asgari grup tablosunu göster"):
+        rows = []
+        for target in GROUPS:
+            p, o = JOINT_REQUIREMENTS[target]
+            rows.append({"Hedef Grup": target, "Pilot En Az": p, "Diğer Ortak En Az": o})
+        st.dataframe(rows, use_container_width=True, hide_index=True)
