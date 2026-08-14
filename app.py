@@ -204,12 +204,12 @@ def _draw_pdf_footer(canvas, doc):
     # Logo
     if LOGO_PATH.exists():
         try:
-            logo_width = 32 * mm
-            logo_height = 20 * mm
+            logo_width = 42 * mm
+            logo_height = 26 * mm
             canvas.drawImage(
                 str(LOGO_PATH),
                 (page_width - logo_width) / 2,
-                11 * mm,
+                10 * mm,
                 width=logo_width,
                 height=logo_height,
                 preserveAspectRatio=True,
@@ -220,10 +220,10 @@ def _draw_pdf_footer(canvas, doc):
             pass
 
     regular_font, _ = _pdf_fonts()
-    canvas.setFont(regular_font, 7.3)
+    canvas.setFont(regular_font, 6.9)
     canvas.setFillColor(colors.HexColor("#5f6673"))
     footer_text = "Bu belgenin hazırlanması DEVRAN MÂLİ MÜŞAVİRLİK tarafından sağlanmıştır"
-    canvas.drawCentredString(page_width / 2, 6.5 * mm, footer_text)
+    canvas.drawCentredString(page_width / 2, 6.0 * mm, footer_text)
 
     canvas.restoreState()
 
@@ -336,45 +336,28 @@ def create_experience_pdf(
     result_min_amount = WORK_EXPERIENCE_MIN.get(result_group)
 
     story = []
-
-    # Header with logo + title
-    if LOGO_PATH.exists():
-        header = Table(
-            [[
-                RLImage(str(LOGO_PATH), width=43 * mm, height=24 * mm),
-                Paragraph("MÜTEAHHİTLİK SINIF HESAPLAMA", title_style),
-                Paragraph("2026", ParagraphStyle(
-                    "YearStyle",
-                    parent=styles["Normal"],
-                    fontName=font_bold,
-                    fontSize=17,
-                    alignment=TA_CENTER,
-                    textColor=colors.black,
-                )),
-            ]],
-            colWidths=[46 * mm, 113 * mm, 20 * mm],
-            hAlign="LEFT",
-        )
-    else:
-        header = Table(
-            [[
-                Paragraph("", body_style),
-                Paragraph("MÜTEAHHİTLİK SINIF HESAPLAMA", title_style),
-                Paragraph("2026", ParagraphStyle(
-                    "YearStyle",
-                    parent=styles["Normal"],
-                    fontName=font_bold,
-                    fontSize=17,
-                    alignment=TA_CENTER,
-                    textColor=colors.black,
-                )),
-            ]],
-            colWidths=[46 * mm, 113 * mm, 20 * mm],
-            hAlign="LEFT",
-        )
+    # Header: sade başlık + yıl
+    header = Table(
+        [[
+            Paragraph("MÜTEAHHİTLİK SINIF HESAPLAMA", title_style),
+            Paragraph("2026", ParagraphStyle(
+                "YearStyle",
+                parent=styles["Normal"],
+                fontName=font_bold,
+                fontSize=18,
+                leading=20,
+                alignment=TA_CENTER,
+                textColor=colors.black,
+            )),
+        ]],
+        colWidths=[155 * mm, 25 * mm],
+        hAlign="LEFT",
+    )
     header.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (2, 0), (2, 0), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
     story.append(header)
@@ -499,14 +482,14 @@ def create_experience_pdf(
     ]))
     story.append(note_box)
     story.append(Spacer(1, 5 * mm))
-
-    footer_left = Paragraph(f"<b>Düzenleme Tarihi</b><br/>{datetime.now().strftime('%d.%m.%Y')}", small_style)
-    footer_mid = Paragraph(f"<b>Rapor No</b><br/>{report_no}", small_style)
-    footer_right = Paragraph("Bu belgenin hazırlanması<br/><b>DEVRAN MÂLİ MÜŞAVİRLİK</b><br/>tarafından sağlanmıştır.", small_style)
+    footer_left = Paragraph(
+        f"<b>Düzenleme Tarihi</b><br/>{datetime.now().strftime('%d.%m.%Y')}",
+        small_style
+    )
 
     footer_table = Table(
-        [[footer_left, footer_mid, footer_right]],
-        colWidths=[54 * mm, 48 * mm, 78 * mm],
+        [[footer_left]],
+        colWidths=[180 * mm],
         hAlign="LEFT",
     )
     footer_table.setStyle(TableStyle([
@@ -514,6 +497,7 @@ def create_experience_pdf(
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.black),
         ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(footer_table)
 
