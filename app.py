@@ -4,13 +4,13 @@ from datetime import datetime
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 
 st.set_page_config(
     page_title="Müteahhitlik Sınıf Hesaplama",
@@ -180,8 +180,8 @@ def _draw_pdf_footer(canvas, doc):
     # Logo
     if LOGO_PATH.exists():
         try:
-            logo_width = 23 * mm
-            logo_height = 18 * mm
+            logo_width = 32 * mm
+            logo_height = 20 * mm
             canvas.drawImage(
                 str(LOGO_PATH),
                 (page_width - logo_width) / 2,
@@ -204,6 +204,7 @@ def _draw_pdf_footer(canvas, doc):
     canvas.restoreState()
 
 
+
 def create_experience_pdf(
     method_name,
     rows,
@@ -215,175 +216,282 @@ def create_experience_pdf(
     three_times_limit=None,
     cap_applied=False,
 ):
-    """İş deneyimi hesabını PDF dökümü haline getir."""
+    """Sade PDF dökümü oluşturur: detaylı hesaplama yok, sadece özet tablo ve sonuç."""
     buffer = BytesIO()
     font_regular, font_bold = _pdf_fonts()
 
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=14 * mm,
-        leftMargin=14 * mm,
-        topMargin=14 * mm,
-        bottomMargin=38 * mm,
-        title="Müteahhitlik İş Deneyim Hesap Dökümü",
+        rightMargin=11 * mm,
+        leftMargin=11 * mm,
+        topMargin=12 * mm,
+        bottomMargin=32 * mm,
+        title="Müteahhitlik Sınıf Hesaplama",
         author="DEVRAN MÂLİ MÜŞAVİRLİK",
     )
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        "DevranTitle",
+        "PDFTitle",
         parent=styles["Title"],
         fontName=font_bold,
-        fontSize=15,
-        leading=19,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor("#172033"),
+        fontSize=19,
+        leading=22,
+        alignment=TA_LEFT,
+        textColor=colors.black,
+        spaceAfter=2,
+    )
+    sub_style = ParagraphStyle(
+        "PDFSub",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=10.5,
+        leading=13,
+        alignment=TA_LEFT,
+        textColor=colors.black,
         spaceAfter=6,
     )
-    center_style = ParagraphStyle(
-        "DevranCenter",
-        parent=styles["Normal"],
-        fontName=font_regular,
-        fontSize=8.5,
-        leading=11,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor("#555e6d"),
-    )
-    body_style = ParagraphStyle(
-        "DevranBody",
-        parent=styles["Normal"],
-        fontName=font_regular,
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor("#252a33"),
-        spaceAfter=4,
-    )
-    bold_style = ParagraphStyle(
-        "DevranBold",
-        parent=body_style,
-        fontName=font_bold,
-    )
-    result_style = ParagraphStyle(
-        "DevranResult",
+    section_style = ParagraphStyle(
+        "PDFSection",
         parent=styles["Heading2"],
         fontName=font_bold,
-        fontSize=15,
-        leading=19,
+        fontSize=11.5,
+        leading=13,
+        textColor=colors.black,
+        spaceAfter=4,
+        spaceBefore=2,
+    )
+    body_style = ParagraphStyle(
+        "PDFBody",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=9.2,
+        leading=12,
+        textColor=colors.black,
+        spaceAfter=3,
+    )
+    small_style = ParagraphStyle(
+        "PDFSmall",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=8.2,
+        leading=10,
+        textColor=colors.black,
+        spaceAfter=2,
+    )
+    center_bold = ParagraphStyle(
+        "PDFCenterBold",
+        parent=styles["Normal"],
+        fontName=font_bold,
+        fontSize=11,
+        leading=13,
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#172033"),
-        spaceBefore=5,
-        spaceAfter=5,
+        textColor=colors.black,
+    )
+    big_result = ParagraphStyle(
+        "PDFBigResult",
+        parent=styles["Normal"],
+        fontName=font_bold,
+        fontSize=29,
+        leading=32,
+        alignment=TA_CENTER,
+        textColor=colors.black,
+    )
+    value_style = ParagraphStyle(
+        "PDFValue",
+        parent=styles["Normal"],
+        fontName=font_bold,
+        fontSize=26,
+        leading=29,
+        alignment=TA_CENTER,
+        textColor=colors.black,
     )
 
-    story = [
-        Paragraph("MÜTEAHHİTLİK İŞ DENEYİM HESAP DÖKÜMÜ", title_style),
-        Paragraph(f"Hesaplama yöntemi: {method_name}", center_style),
-        Paragraph(f"Döküm tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", center_style),
-        Spacer(1, 6 * mm),
-    ]
+    report_no = f"MH-{datetime.now().strftime('%Y%m%d-%H%M')}"
+    result_min_amount = WORK_EXPERIENCE_MIN.get(result_group)
 
-    table_data = [[
-        "No",
-        "Ada / Parsel",
-        "İnşaat Alanı",
-        "Yapı Sınıfı",
-        "2026 Birim Maliyet",
-        "İş Deneyim Tutarı",
-    ]]
+    story = []
 
-    for row in rows:
-        table_data.append([
-            str(row.get("row", "")),
-            str(row.get("ada_parsel", "-")),
-            fmt_m2(row.get("area", 0)),
-            str(row.get("class", "")),
-            f"{fmt_tl(row.get('unit_cost', BUILDING_UNIT_COSTS[row.get('class')])).replace(',00 ₺', ' ₺')}/m²",
-            fmt_tl(row.get("amount", 0)),
-        ])
+    # Header with logo + title
+    if LOGO_PATH.exists():
+        header = Table(
+            [[
+                RLImage(str(LOGO_PATH), width=43 * mm, height=24 * mm),
+                Paragraph("MÜTEAHHİTLİK SINIF HESAPLAMA", title_style),
+                Paragraph("2026", ParagraphStyle(
+                    "YearStyle",
+                    parent=styles["Normal"],
+                    fontName=font_bold,
+                    fontSize=17,
+                    alignment=TA_CENTER,
+                    textColor=colors.black,
+                )),
+            ]],
+            colWidths=[46 * mm, 113 * mm, 20 * mm],
+            hAlign="LEFT",
+        )
+    else:
+        header = Table(
+            [[
+                Paragraph("", body_style),
+                Paragraph("MÜTEAHHİTLİK SINIF HESAPLAMA", title_style),
+                Paragraph("2026", ParagraphStyle(
+                    "YearStyle",
+                    parent=styles["Normal"],
+                    fontName=font_bold,
+                    fontSize=17,
+                    alignment=TA_CENTER,
+                    textColor=colors.black,
+                )),
+            ]],
+            colWidths=[46 * mm, 113 * mm, 20 * mm],
+            hAlign="LEFT",
+        )
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (2, 0), (2, 0), "CENTER"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    story.append(header)
+    story.append(Paragraph("Bitirdiğim İnşaatlar ile Hangi Sınıfı Alabilirim?", sub_style))
+    story.append(Spacer(1, 1.2 * mm))
 
-    table = Table(
-        table_data,
-        colWidths=[9 * mm, 28 * mm, 25 * mm, 20 * mm, 39 * mm, 43 * mm],
+    # Method/Note box
+    method_table = Table(
+        [
+            ["Yöntem", method_name],
+            ["Not", "Toplam tutar, en büyük iş deneyiminin 3 katını geçemez (Yönetmelik)."],
+        ],
+        colWidths=[30 * mm, 147 * mm],
+        hAlign="LEFT",
+    )
+    method_table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
+        ("FONTNAME", (0, 0), (0, -1), font_bold),
+        ("FONTNAME", (1, 0), (-1, -1), font_regular),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("LEADING", (0, 0), (-1, -1), 12),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(method_table)
+    story.append(Spacer(1, 4 * mm))
+
+    # Data table
+    story.append(Paragraph("İNŞAAT BİLGİLERİ", section_style))
+    data = [["Sıra", "Ada Parsel", "İnşaat Alanı (m²)", "Yapı Sınıfı", "m² Maliyeti (TL)"]]
+    max_rows = max(len(rows), 10 if len(rows) > 1 else 1)
+    for idx in range(max_rows):
+        if idx < len(rows):
+            row = rows[idx]
+            data.append([
+                str(row.get("row", idx + 1)),
+                str(row.get("ada_parsel", "")),
+                f"{row.get('area', 0):,.0f}".replace(",", "."),
+                str(row.get("class", "")),
+                f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
+            ])
+        else:
+            data.append([str(idx + 1), "", "", "", ""])
+
+    info_table = Table(
+        data,
+        colWidths=[18 * mm, 33 * mm, 41 * mm, 31 * mm, 36 * mm],
         repeatRows=1,
-        hAlign="CENTER",
+        hAlign="LEFT",
     )
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#172033")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+    info_table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), font_bold),
         ("FONTNAME", (0, 1), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.1),
-        ("LEADING", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, -1), 9.1),
+        ("LEADING", (0, 0), (-1, -1), 11),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (0, -1), "CENTER"),
-        ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd1db")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f9fc")]),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 5 * mm))
+
+    # Result section
+    left_result = Table(
+        [[
+            Paragraph("ULAŞILABİLEN<br/>BELGE GRUBU", center_bold),
+        ], [
+            Paragraph(result_group, big_result),
+        ], [
+            Paragraph("GRUBU", center_bold),
+        ]],
+        colWidths=[52 * mm],
+    )
+    left_result.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
 
-    story.append(table)
-    story.append(Spacer(1, 6 * mm))
+    min_text = "Asgari iş deneyimi aranmaz" if result_min_amount is None else fmt_tl(result_min_amount).replace(",00 ₺", " TL")
+    right_result = Table(
+        [[Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARI", center_bold)],
+         [Paragraph(min_text, value_style)],
+         [Paragraph(f"({result_group} Grubu)", center_bold)]],
+        colWidths=[122 * mm],
+    )
+    right_result.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+    ]))
 
-    if normal_total is not None and normal_group is not None:
-        story.append(Paragraph(
-            f"Normal toplam iş deneyim tutarı: {fmt_tl(normal_total)}",
-            bold_style,
-        ))
-        story.append(Paragraph(
-            f"Normal toplama göre belge grubu: {normal_group} GRUBU",
-            body_style,
-        ))
+    result_table = Table([[left_result, right_result]], colWidths=[55 * mm, 125 * mm], hAlign="LEFT")
+    result_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(result_table)
+    story.append(Spacer(1, 5 * mm))
 
-    if largest_row is not None and three_times_limit is not None:
-        story.append(Spacer(1, 1.5 * mm))
-        story.append(Paragraph(
-            f"En büyük iş deneyimi: {largest_row['ada_parsel']} - {fmt_tl(largest_row['amount'])}",
-            body_style,
-        ))
-        story.append(Paragraph(
-            f"En büyük iş deneyiminin 3 katı üst sınırı: {fmt_tl(three_times_limit)}",
-            body_style,
-        ))
+    note_box = Table(
+        [[Paragraph("<b>Önemli Not:</b> Bu rapor bilgilendirme amaçlıdır. Resmî başvurularda ilgili mevzuat hükümleri ve idare değerlendirmesi esastır.", small_style)]],
+        colWidths=[180 * mm],
+        hAlign="LEFT",
+    )
+    note_box.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(note_box)
+    story.append(Spacer(1, 5 * mm))
 
-    if cap_applied:
-        story.append(Paragraph(
-            f"3 kat kuralı sonrası dikkate alınan iş deneyim tutarı: {fmt_tl(total_amount)}",
-            bold_style,
-        ))
-    else:
-        story.append(Paragraph(
-            f"Dikkate alınan iş deneyim tutarı: {fmt_tl(total_amount)}",
-            bold_style,
-        ))
+    footer_left = Paragraph(f"<b>Düzenleme Tarihi</b><br/>{datetime.now().strftime('%d.%m.%Y')}", small_style)
+    footer_mid = Paragraph(f"<b>Rapor No</b><br/>{report_no}", small_style)
+    footer_right = Paragraph("Bu belgenin hazırlanması<br/><b>DEVRAN MÂLİ MÜŞAVİRLİK</b><br/>tarafından sağlanmıştır.", small_style)
 
-    story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph(f"SONUÇ: {result_group} GRUBU", result_style))
-
-    if (
-        normal_group is not None
-        and cap_applied
-        and normal_group != result_group
-    ):
-        story.append(Paragraph(
-            f"Normalde {normal_group} sınıfı alırsın; ancak en büyük inşaat deneyiminin "
-            f"3 katını geçememe kuralından dolayı {result_group} sınıfı alabilirsin.",
-            bold_style,
-        ))
-
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph(
-        "Formül: Son 5 yıl hesabında m² × güncel yapı sınıfı birim maliyeti × 0,85 × 0,90. "
-        "Son 15 yıl tek iş hesabında aynı tutar × 2 olarak dikkate alınır.",
-        body_style,
-    ))
-    story.append(Paragraph(
-        "Bu döküm bilgilendirme amaçlıdır. Resmî değerlendirmede güncel mevzuat, "
-        "YAMBİS kayıtları ve diğer yeterlik şartları ayrıca dikkate alınır.",
-        body_style,
-    ))
+    footer_table = Table(
+        [[footer_left, footer_mid, footer_right]],
+        colWidths=[54 * mm, 48 * mm, 78 * mm],
+        hAlign="LEFT",
+    )
+    footer_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.black),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story.append(footer_table)
 
     doc.build(
         story,
