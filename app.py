@@ -123,8 +123,39 @@ st.markdown("""
         border: 1px solid #e6e9ef;
         border-radius: 18px;
         background: white;
-        margin-bottom: .7rem;
+        margin-bottom: .9rem;
         box-shadow: 0 4px 16px rgba(0,0,0,.04);
+    }
+
+    .click-card {
+        display: block;
+        text-decoration: none !important;
+        color: inherit !important;
+        padding: 1rem 1.05rem;
+        border: 1px solid #e6e9ef;
+        border-radius: 18px;
+        background: white;
+        margin-bottom: .9rem;
+        box-shadow: 0 4px 16px rgba(0,0,0,.04);
+        transition: all .18s ease;
+    }
+
+    .click-card:hover {
+        border-color: #cfd8ea;
+        box-shadow: 0 10px 22px rgba(0,0,0,.07);
+        transform: translateY(-1px);
+    }
+
+    .click-card .title {
+        font-weight: 700;
+        font-size: 1.06rem;
+        margin-bottom: .35rem;
+        color: #1d2a44;
+    }
+
+    .click-card .desc {
+        font-size: .92rem;
+        color: #6b7485;
     }
 
     .result-card {
@@ -166,10 +197,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-if "page" not in st.session_state:
-    st.session_state.page = "home"
+allowed_pages = {"home", "m2", "joint"}
+page_from_query = st.query_params.get("page", "home")
+if page_from_query not in allowed_pages:
+    page_from_query = "home"
+st.session_state.page = page_from_query
 
 def go(page):
+    st.query_params["page"] = page
     st.session_state.page = page
     st.rerun()
 
@@ -186,13 +221,25 @@ st.markdown("""
 if st.session_state.page == "home":
     st.subheader("Ne hesaplamak istiyorsunuz?")
 
-    st.markdown('<div class="question-card"><b>1. Mevcut sınıfım ile kaç m² inşaat yapabilirim?</b><br><span class="small-note">Yetki belge grubunuzu ve yapı sınıfını seçin.</span></div>', unsafe_allow_html=True)
-    if st.button("📐 m² Sınırını Hesapla", use_container_width=True, type="primary"):
-        go("m2")
+    st.markdown(
+        '''
+        <a class="click-card" href="?page=m2">
+            <div class="title">1. Mevcut sınıfım ile kaç m² inşaat yapabilirim?</div>
+            <div class="desc">Yetki belge grubunuzu ve yapı sınıfını seçin.</div>
+        </a>
+        ''',
+        unsafe_allow_html=True
+    )
 
-    st.markdown('<div class="question-card"><b>2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</b><br><span class="small-note">İki ortağın gruplarını ve pilot ortağı seçin.</span></div>', unsafe_allow_html=True)
-    if st.button("🤝 Ortaklık Grubunu Hesapla", use_container_width=True):
-        go("joint")
+    st.markdown(
+        '''
+        <a class="click-card" href="?page=joint">
+            <div class="title">2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</div>
+            <div class="desc">Büyük ve küçük belge sınıfı olan ortakları seçin.</div>
+        </a>
+        ''',
+        unsafe_allow_html=True
+    )
 
     st.divider()
     st.caption("Veriler: Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 Yapım Müteahhitliği Yeterlik Tablosu.")
@@ -256,36 +303,40 @@ elif st.session_state.page == "joint":
 
     st.header("🤝 Sınıfları birleştirirsem hangi sınıf olur?")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        group1 = st.selectbox("1. Ortağın grubu", GROUPS, index=GROUPS.index("G"), key="g1")
-    with col2:
-        group2 = st.selectbox("2. Ortağın grubu", GROUPS, index=GROUPS.index("H"), key="g2")
+    # 1. ortak her zaman belge grubu daha yüksek olan ortak olarak seçilir.
+    # H grubu en düşük grup olduğu için kendisinden daha küçük grup bulunmadığından
+    # birinci ortak seçiminde H gösterilmez.
+    big_group_options = GROUPS[:-1]
 
-    pilot_choice = st.radio(
-        "Pilot ortak hangisi?",
-        ["1. Ortak", "2. Ortak"],
-        horizontal=True,
+    big_group = st.selectbox(
+        "BÜYÜK BELGE SINIFI OLAN ORTAK",
+        big_group_options,
+        index=big_group_options.index("G"),
+        key="big_group",
     )
 
-    if pilot_choice == "1. Ortak":
-        pilot_group, other_group = group1, group2
-        pilot_label, other_label = "1. Ortak", "2. Ortak"
-    else:
-        pilot_group, other_group = group2, group1
-        pilot_label, other_label = "2. Ortak", "1. Ortak"
+    # Yalnızca seçilen büyük gruptan daha düşük belge gruplarını göster.
+    big_index = GROUP_RANK[big_group]
+    small_group_options = GROUPS[big_index + 1:]
+
+    small_group = st.selectbox(
+        "KÜÇÜK BELGE SINIFI OLAN ORTAK",
+        small_group_options,
+        index=0,
+        key=f"small_group_for_{big_group}",
+    )
 
     st.caption(
-        "Not: Yönetmelik uygulamasında yüksek hisseye sahip ortak pilot ortaktır. "
-        "Hisseler eşitse, aksi beyan edilmedikçe belge grubu yüksek olan ortak pilot kabul edilir."
+        f"**{big_group}** grubundan daha düşük belge grupları arasından seçim yapabilirsiniz. "
+        "Büyük belge sınıfı olan ortak hesaplamada pilot ortak kabul edilir."
     )
 
     if st.button("ORTAKLIK GRUBUNU BUL", type="primary", use_container_width=True):
-        result, required_pilot, required_other = best_joint_group(pilot_group, other_group)
+        result, required_pilot, required_other = best_joint_group(big_group, small_group)
 
         st.markdown(f"""
         <div class="joint-result">
-            <div><b>{pilot_label}: {pilot_group} (Pilot) &nbsp; + &nbsp; {other_label}: {other_group}</b></div>
+            <div><b>Büyük belge sınıfı: {big_group} &nbsp; + &nbsp; Küçük belge sınıfı: {small_group}</b></div>
             <div style="margin-top:.6rem;">Ulaşılabilecek en yüksek ortaklık grubu</div>
             <div class="result-number">{result} GRUBU</div>
         </div>
@@ -293,19 +344,12 @@ elif st.session_state.page == "joint":
 
         st.success(
             f"**{result} grubu** için 2026 tablosundaki asgari eşleşme: "
-            f"Pilot ortak **en az {required_pilot}**, diğer ortak **en az {required_other}**."
+            f"Büyük belge sınıfı olan ortak **en az {required_pilot}**, "
+            f"küçük belge sınıfı olan ortak **en az {required_other}**."
         )
 
-        if group1 != group2:
-            swapped_result, _, _ = best_joint_group(other_group, pilot_group)
-            if swapped_result != result:
-                st.info(
-                    f"Pilot ortak değiştirilirse sonuç **{swapped_result} grubu** olur. "
-                    "Ortaklık/hisse yapınız uygunsa pilot seçimini buna göre ayrıca kontrol edin."
-                )
-
         st.warning(
-            "Bu hesap yalnızca seçilen iki ortağın mevcut yetki belge grupları üzerinden "
+            "Bu hesap seçilen iki ortağın mevcut yetki belge grupları üzerinden "
             "2026 iş ortaklığı yeterlik tablosunu uygular. Ortaklık oranı, iş deneyim belgeleri, "
             "YAMBİS kayıtları ve diğer başvuru şartları resmî değerlendirmede ayrıca kontrol edilir."
         )
@@ -314,5 +358,10 @@ elif st.session_state.page == "joint":
         rows = []
         for target in GROUPS:
             p, o = JOINT_REQUIREMENTS[target]
-            rows.append({"Hedef Grup": target, "Pilot En Az": p, "Diğer Ortak En Az": o})
+            rows.append({
+                "Hedef Grup": target,
+                "Büyük Belge Sınıfı En Az": p,
+                "Küçük Belge Sınıfı En Az": o
+            })
         st.dataframe(rows, use_container_width=True, hide_index=True)
+
