@@ -138,7 +138,7 @@ def work_experience_group(amount):
     return "H"
 
 def building_class_label(code):
-    return f"{code} — {BUILDING_CLASSES[code]} — {BUILDING_UNIT_COSTS[code]:,.0f} TL/m²".replace(",", ".")
+    return f"{code} — {BUILDING_CLASSES[code]}"
 
 LOGO_PATH = Path(__file__).with_name("devran_logo.png")
 
@@ -298,7 +298,7 @@ def create_experience_pdf(
             str(row.get("ada_parsel", "-")),
             fmt_m2(row.get("area", 0)),
             str(row.get("class", "")),
-            f"{fmt_tl(BUILDING_UNIT_COSTS[row.get('class')]).replace(',00 ₺', ' ₺')}/m²",
+            f"{fmt_tl(row.get('unit_cost', BUILDING_UNIT_COSTS[row.get('class')])).replace(',00 ₺', ' ₺')}/m²",
             fmt_tl(row.get("amount", 0)),
         ])
 
@@ -747,7 +747,7 @@ elif st.session_state.page == "experience":
 
         for i in range(1, 11):
             st.markdown(f"**{i}. İNŞAAT**")
-            col_parcel, col_area, col_class = st.columns([1.1, 1, 2])
+            col_parcel, col_area, col_class, col_cost = st.columns([1.05, 0.9, 1.55, 1.0])
 
             with col_parcel:
                 ada_parsel = st.text_input(
@@ -769,13 +769,24 @@ elif st.session_state.page == "experience":
                 bclass = st.selectbox(
                     "GÜNCEL İNŞAAT SINIFI",
                     list(BUILDING_UNIT_COSTS.keys()),
-                    format_func=building_class_label,
+                    format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
                     index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
                     key=f"exp5_class_{i}",
                 )
 
+            unit_cost = BUILDING_UNIT_COSTS[bclass]
+
+            with col_cost:
+                st.markdown("**GÜNCEL m² MALİYETİ**")
+                st.markdown(
+                    f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
+                    f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
+                    f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
+                    unsafe_allow_html=True,
+                )
+
             if area > 0:
-                row_amount = area * BUILDING_UNIT_COSTS[bclass] * 0.85 * 0.90
+                row_amount = area * unit_cost * 0.85 * 0.90
                 total_experience += row_amount
                 entered_rows += 1
 
@@ -784,12 +795,13 @@ elif st.session_state.page == "experience":
                     "ada_parsel": ada_parsel.strip() or f"{i}. İnşaat",
                     "area": area,
                     "class": bclass,
+                    "unit_cost": unit_cost,
                     "amount": row_amount,
                 })
 
                 st.caption(
                     f"{fmt_m2(area)} × "
-                    f"{fmt_tl(BUILDING_UNIT_COSTS[bclass]).replace(',00 ₺',' ₺')}/m² × "
+                    f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m² × "
                     f"0,85 × 0,90 = **{fmt_tl(row_amount)}**"
                 )
 
@@ -881,7 +893,7 @@ elif st.session_state.page == "experience":
     else:
         st.subheader("Son 15 yıldaki tek inşaat")
 
-        col_parcel, col_area, col_class = st.columns([1.1, 1, 2])
+        col_parcel, col_area, col_class, col_cost = st.columns([1.05, 0.9, 1.55, 1.0])
 
         with col_parcel:
             ada_parsel = st.text_input(
@@ -903,19 +915,30 @@ elif st.session_state.page == "experience":
             bclass = st.selectbox(
                 "GÜNCEL İNŞAAT SINIFI",
                 list(BUILDING_UNIT_COSTS.keys()),
-                format_func=building_class_label,
+                format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
                 index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
                 key="exp15_class",
             )
 
+        unit_cost = BUILDING_UNIT_COSTS[bclass]
+
+        with col_cost:
+            st.markdown("**GÜNCEL m² MALİYETİ**")
+            st.markdown(
+                f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
+                f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
+                f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
+                unsafe_allow_html=True,
+            )
+
         if area > 0:
-            base_amount = area * BUILDING_UNIT_COSTS[bclass] * 0.85 * 0.90
+            base_amount = area * unit_cost * 0.85 * 0.90
             total_experience = base_amount * 2
             result_group = work_experience_group(total_experience)
 
             st.markdown(
                 f"**Hesap:** {fmt_m2(area)} × "
-                f"{fmt_tl(BUILDING_UNIT_COSTS[bclass]).replace(',00 ₺',' ₺')}/m² × "
+                f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m² × "
                 f"0,85 × 0,90 × 2"
             )
 
@@ -944,6 +967,7 @@ elif st.session_state.page == "experience":
                 "ada_parsel": ada_parsel.strip() or "1. İnşaat",
                 "area": area,
                 "class": bclass,
+                "unit_cost": unit_cost,
                 "amount": total_experience,
             }]
 
