@@ -144,32 +144,56 @@ LOGO_PATH = Path(__file__).with_name("devran_logo.png")
 
 
 def _pdf_fonts():
-    """Türkçe karakter destekli sistem fontlarını kullan."""
+    """PDF için Türkçe karakter destekli fontları güvenli şekilde yükler.
+
+    Öncelik ReportLab paketinin kendi içinde gelen Vera.ttf / VeraBd.ttf
+    fontlarındadır. Böylece Streamlit Cloud ortamında sistem fontuna bağlı
+    kalınmaz ve İ, ı, Ş, ş, Ğ, ğ, Ç, ç gibi karakterler bozulmaz.
+    """
+    import reportlab
+    import os
+
+    reportlab_fonts = Path(reportlab.__file__).resolve().parent / "fonts"
+
     regular_candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        reportlab_fonts / "Vera.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
     ]
+
     bold_candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        reportlab_fonts / "VeraBd.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
     ]
 
-    regular = next((p for p in regular_candidates if Path(p).exists()), None)
-    bold = next((p for p in bold_candidates if Path(p).exists()), None)
+    regular = next((p for p in regular_candidates if p.exists()), None)
+    bold = next((p for p in bold_candidates if p.exists()), None)
 
-    if regular and bold:
-        try:
-            if "DevranPDFRegular" not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont("DevranPDFRegular", regular))
-            if "DevranPDFBold" not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont("DevranPDFBold", bold))
-            return "DevranPDFRegular", "DevranPDFBold"
-        except Exception:
-            pass
+    if regular is None or bold is None:
+        raise RuntimeError(
+            "Türkçe karakter destekli PDF fontu bulunamadı. "
+            "Lütfen reportlab paketinin eksiksiz kurulduğunu kontrol edin."
+        )
 
-    return "Helvetica", "Helvetica-Bold"
+    if "DevranPDFRegular" not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont("DevranPDFRegular", str(regular)))
+
+    if "DevranPDFBold" not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont("DevranPDFBold", str(bold)))
+
+    return "DevranPDFRegular", "DevranPDFBold"
+
+
+def _verify_turkish_pdf_font():
+    """PDF üretmeden önce kritik Türkçe karakterlerin fontta kullanılabildiğini doğrular."""
+    regular_font, bold_font = _pdf_fonts()
+    # TTFont kayıtlıysa ReportLab Unicode metni fonta gömebilir.
+    # Bu metin özellikle daha önce kutu çıkan karakterleri içerir.
+    _ = "MÜTEAHHİTLİK - İnşaat - Sınıfı - İş - Değerlendirme - MÂLİ MÜŞAVİRLİK"
+    return regular_font, bold_font
 
 
 def _draw_pdf_footer(canvas, doc):
@@ -218,7 +242,7 @@ def create_experience_pdf(
 ):
     """Sade PDF dökümü oluşturur: detaylı hesaplama yok, sadece özet tablo ve sonuç."""
     buffer = BytesIO()
-    font_regular, font_bold = _pdf_fonts()
+    font_regular, font_bold = _verify_turkish_pdf_font()
 
     doc = SimpleDocTemplate(
         buffer,
