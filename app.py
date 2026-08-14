@@ -451,10 +451,18 @@ elif st.session_state.page == "experience":
 
         total_experience = 0.0
         entered_rows = 0
+        row_results = []
 
         for i in range(1, 11):
             st.markdown(f"**{i}. İNŞAAT**")
-            col_area, col_class = st.columns([1, 2])
+            col_parcel, col_area, col_class = st.columns([1.1, 1, 2])
+
+            with col_parcel:
+                ada_parsel = st.text_input(
+                    "ADA PARSEL",
+                    placeholder="Örn: 123 / 45",
+                    key=f"exp5_parcel_{i}",
+                )
 
             with col_area:
                 area = st.number_input(
@@ -478,6 +486,15 @@ elif st.session_state.page == "experience":
                 row_amount = area * BUILDING_UNIT_COSTS[bclass] * 0.85 * 0.90
                 total_experience += row_amount
                 entered_rows += 1
+
+                row_results.append({
+                    "row": i,
+                    "ada_parsel": ada_parsel.strip() or f"{i}. İnşaat",
+                    "area": area,
+                    "class": bclass,
+                    "amount": row_amount,
+                })
+
                 st.caption(
                     f"{fmt_m2(area)} × "
                     f"{fmt_tl(BUILDING_UNIT_COSTS[bclass]).replace(',00 ₺',' ₺')}/m² × "
@@ -488,32 +505,61 @@ elif st.session_state.page == "experience":
                 st.divider()
 
         if entered_rows > 0:
-            result_group = work_experience_group(total_experience)
+            # Normal toplamdan çıkan grup
+            normal_group = work_experience_group(total_experience)
+
+            # 3 kat kuralı:
+            # En yüksek iş deneyim tutarına sahip tek satırın 3 katı,
+            # 5 yıllık toplam iş deneyimi için üst sınırdır.
+            largest_row = max(row_results, key=lambda x: x["amount"])
+            three_times_limit = largest_row["amount"] * 3
+            capped_experience = min(total_experience, three_times_limit)
+            capped_group = work_experience_group(capped_experience)
+            cap_applied = total_experience > three_times_limit
 
             st.markdown(f"""
             <div class="result-card">
-                <div><b>TOPLAM İŞ DENEYİM TUTARI</b></div>
+                <div><b>NORMAL TOPLAM İŞ DENEYİM TUTARI</b></div>
                 <div class="result-number">{fmt_tl(total_experience)}</div>
-                <div>Asgari iş deneyim tutarına göre</div>
-                <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{result_group} GRUBU</div>
+                <div>Normal toplama göre: <b>{normal_group} GRUBU</b></div>
             </div>
             """, unsafe_allow_html=True)
 
-            if result_group != "H":
-                st.success(
-                    f"Toplam tutarınız iş deneyimi yönünden **{result_group} grubu** için "
-                    f"2026 asgari iş deneyim tutarını karşılıyor."
-                )
+            st.info(
+                f"**En büyük iş deneyimi:** {largest_row['ada_parsel']} — "
+                f"{fmt_tl(largest_row['amount'])}\n\n"
+                f"**3 katı üst sınırı:** {fmt_tl(three_times_limit)}"
+            )
+
+            if cap_applied:
+                st.markdown(f"""
+                <div class="joint-result">
+                    <div><b>3 KATI KURALI UYGULANDI</b></div>
+                    <div style="margin-top:.5rem;">Dikkate alınabilecek iş deneyim tutarı</div>
+                    <div class="result-number">{fmt_tl(capped_experience)}</div>
+                    <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{capped_group} GRUBU</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if normal_group != capped_group:
+                    st.warning(
+                        f"⚠️ **Normalde {normal_group} sınıfı alırsın; ancak en büyük inşaat deneyiminin "
+                        f"3 katını geçememe kuralından dolayı {capped_group} sınıfı alabilirsin.**"
+                    )
+                else:
+                    st.warning(
+                        f"⚠️ Toplam iş deneyimi 3 kat sınırını aşıyor; dikkate alınan tutar "
+                        f"{fmt_tl(capped_experience)}. Buna rağmen belge sınıfı **{capped_group}** olarak değişmiyor."
+                    )
             else:
-                st.info(
-                    "Hesaplanan tutar G1 grubunun 2026 asgari iş deneyim tutarının altında kaldığı için "
-                    "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
+                st.success(
+                    f"✅ Toplam iş deneyiminiz, en büyük iş deneyiminin 3 katı sınırını aşmıyor. "
+                    f"Asgari iş deneyim tutarına göre **{normal_group} grubu** sonucu oluşuyor."
                 )
 
-            st.warning(
-                "Önemli: Resmî değerlendirmede son 5 yıldaki işlerin toplamı için ayrıca "
-                "son 15 yıl içerisindeki en büyük iş deneyim miktarının üç katı üst sınırı uygulanabilir. "
-                "Bu ekranda, sizin istediğiniz şekilde girilen 10 işin doğrudan toplamı gösterilmektedir."
+            st.caption(
+                "5 yıllık toplam hesabında dikkate alınabilecek tutar, girilen işlerin toplamı ile "
+                "en yüksek tek iş deneyim tutarının 3 katından düşük olanıdır."
             )
         else:
             st.info("Hesaplama için en az bir inşaatın alanını girin.")
