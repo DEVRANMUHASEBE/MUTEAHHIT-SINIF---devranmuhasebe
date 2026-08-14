@@ -1,4 +1,16 @@
 import streamlit as st
+from io import BytesIO
+from datetime import datetime
+from pathlib import Path
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 st.set_page_config(
     page_title="Müteahhitlik Sınıf Hesaplama",
@@ -128,6 +140,259 @@ def work_experience_group(amount):
 def building_class_label(code):
     return f"{code} — {BUILDING_CLASSES[code]} — {BUILDING_UNIT_COSTS[code]:,.0f} TL/m²".replace(",", ".")
 
+LOGO_PATH = Path(__file__).with_name("devran_logo.png")
+
+
+def _pdf_fonts():
+    """Türkçe karakter destekli sistem fontlarını kullan."""
+    regular_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    bold_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]
+
+    regular = next((p for p in regular_candidates if Path(p).exists()), None)
+    bold = next((p for p in bold_candidates if Path(p).exists()), None)
+
+    if regular and bold:
+        try:
+            if "DevranPDFRegular" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("DevranPDFRegular", regular))
+            if "DevranPDFBold" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("DevranPDFBold", bold))
+            return "DevranPDFRegular", "DevranPDFBold"
+        except Exception:
+            pass
+
+    return "Helvetica", "Helvetica-Bold"
+
+
+def _draw_pdf_footer(canvas, doc):
+    """Her PDF sayfasının altında logo ve Devran ibaresi."""
+    canvas.saveState()
+    page_width, _ = A4
+
+    # Logo
+    if LOGO_PATH.exists():
+        try:
+            logo_width = 23 * mm
+            logo_height = 18 * mm
+            canvas.drawImage(
+                str(LOGO_PATH),
+                (page_width - logo_width) / 2,
+                11 * mm,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto",
+                anchor="c",
+            )
+        except Exception:
+            pass
+
+    regular_font, _ = _pdf_fonts()
+    canvas.setFont(regular_font, 7.3)
+    canvas.setFillColor(colors.HexColor("#5f6673"))
+    footer_text = "Bu belgenin hazırlanması DEVRAN MÂLİ MÜŞAVİRLİK tarafından sağlanmıştır"
+    canvas.drawCentredString(page_width / 2, 6.5 * mm, footer_text)
+
+    canvas.restoreState()
+
+
+def create_experience_pdf(
+    method_name,
+    rows,
+    total_amount,
+    result_group,
+    normal_total=None,
+    normal_group=None,
+    largest_row=None,
+    three_times_limit=None,
+    cap_applied=False,
+):
+    """İş deneyimi hesabını PDF dökümü haline getir."""
+    buffer = BytesIO()
+    font_regular, font_bold = _pdf_fonts()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=14 * mm,
+        leftMargin=14 * mm,
+        topMargin=14 * mm,
+        bottomMargin=38 * mm,
+        title="Müteahhitlik İş Deneyim Hesap Dökümü",
+        author="DEVRAN MÂLİ MÜŞAVİRLİK",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "DevranTitle",
+        parent=styles["Title"],
+        fontName=font_bold,
+        fontSize=15,
+        leading=19,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#172033"),
+        spaceAfter=6,
+    )
+    center_style = ParagraphStyle(
+        "DevranCenter",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=8.5,
+        leading=11,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#555e6d"),
+    )
+    body_style = ParagraphStyle(
+        "DevranBody",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#252a33"),
+        spaceAfter=4,
+    )
+    bold_style = ParagraphStyle(
+        "DevranBold",
+        parent=body_style,
+        fontName=font_bold,
+    )
+    result_style = ParagraphStyle(
+        "DevranResult",
+        parent=styles["Heading2"],
+        fontName=font_bold,
+        fontSize=15,
+        leading=19,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#172033"),
+        spaceBefore=5,
+        spaceAfter=5,
+    )
+
+    story = [
+        Paragraph("MÜTEAHHİTLİK İŞ DENEYİM HESAP DÖKÜMÜ", title_style),
+        Paragraph(f"Hesaplama yöntemi: {method_name}", center_style),
+        Paragraph(f"Döküm tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", center_style),
+        Spacer(1, 6 * mm),
+    ]
+
+    table_data = [[
+        "No",
+        "Ada / Parsel",
+        "İnşaat Alanı",
+        "Yapı Sınıfı",
+        "2026 Birim Maliyet",
+        "İş Deneyim Tutarı",
+    ]]
+
+    for row in rows:
+        table_data.append([
+            str(row.get("row", "")),
+            str(row.get("ada_parsel", "-")),
+            fmt_m2(row.get("area", 0)),
+            str(row.get("class", "")),
+            f"{fmt_tl(BUILDING_UNIT_COSTS[row.get('class')]).replace(',00 ₺', ' ₺')}/m²",
+            fmt_tl(row.get("amount", 0)),
+        ])
+
+    table = Table(
+        table_data,
+        colWidths=[9 * mm, 28 * mm, 25 * mm, 20 * mm, 39 * mm, 43 * mm],
+        repeatRows=1,
+        hAlign="CENTER",
+    )
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#172033")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), font_bold),
+        ("FONTNAME", (0, 1), (-1, -1), font_regular),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.1),
+        ("LEADING", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd1db")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f9fc")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+
+    story.append(table)
+    story.append(Spacer(1, 6 * mm))
+
+    if normal_total is not None and normal_group is not None:
+        story.append(Paragraph(
+            f"Normal toplam iş deneyim tutarı: {fmt_tl(normal_total)}",
+            bold_style,
+        ))
+        story.append(Paragraph(
+            f"Normal toplama göre belge grubu: {normal_group} GRUBU",
+            body_style,
+        ))
+
+    if largest_row is not None and three_times_limit is not None:
+        story.append(Spacer(1, 1.5 * mm))
+        story.append(Paragraph(
+            f"En büyük iş deneyimi: {largest_row['ada_parsel']} - {fmt_tl(largest_row['amount'])}",
+            body_style,
+        ))
+        story.append(Paragraph(
+            f"En büyük iş deneyiminin 3 katı üst sınırı: {fmt_tl(three_times_limit)}",
+            body_style,
+        ))
+
+    if cap_applied:
+        story.append(Paragraph(
+            f"3 kat kuralı sonrası dikkate alınan iş deneyim tutarı: {fmt_tl(total_amount)}",
+            bold_style,
+        ))
+    else:
+        story.append(Paragraph(
+            f"Dikkate alınan iş deneyim tutarı: {fmt_tl(total_amount)}",
+            bold_style,
+        ))
+
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph(f"SONUÇ: {result_group} GRUBU", result_style))
+
+    if (
+        normal_group is not None
+        and cap_applied
+        and normal_group != result_group
+    ):
+        story.append(Paragraph(
+            f"Normalde {normal_group} sınıfı alırsın; ancak en büyük inşaat deneyiminin "
+            f"3 katını geçememe kuralından dolayı {result_group} sınıfı alabilirsin.",
+            bold_style,
+        ))
+
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph(
+        "Formül: Son 5 yıl hesabında m² × güncel yapı sınıfı birim maliyeti × 0,85 × 0,90. "
+        "Son 15 yıl tek iş hesabında aynı tutar × 2 olarak dikkate alınır.",
+        body_style,
+    ))
+    story.append(Paragraph(
+        "Bu döküm bilgilendirme amaçlıdır. Resmî değerlendirmede güncel mevzuat, "
+        "YAMBİS kayıtları ve diğer yeterlik şartları ayrıca dikkate alınır.",
+        body_style,
+    ))
+
+    doc.build(
+        story,
+        onFirstPage=_draw_pdf_footer,
+        onLaterPages=_draw_pdf_footer,
+    )
+    buffer.seek(0)
+    return buffer.getvalue()
+
 # ---------------------------------------------------------
 # TASARIM
 # ---------------------------------------------------------
@@ -240,6 +505,18 @@ st.markdown("""
         font-weight: 700;
         width: 100%;
     }
+
+    .brand-footer {
+        text-align: center;
+        margin-top: 1.2rem;
+        padding-top: .8rem;
+        color: #656d7b;
+        font-size: .88rem;
+    }
+
+    .brand-footer strong {
+        color: #172033;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -300,6 +577,21 @@ if st.session_state.page == "home":
     st.divider()
     st.caption("Veriler: Çevre, Şehircilik ve İklim Değişikliği Bakanlığı 2026 Yapım Müteahhitliği Yeterlik Tablosu.")
     st.caption("Bilgilendirme amaçlıdır. Resmî başvuru/ruhsat işlemlerinde güncel YAMBİS ve ilgili idare kayıtları esas alınmalıdır.")
+
+    st.divider()
+    if LOGO_PATH.exists():
+        brand_cols = st.columns([1.4, 1, 1.4])
+        with brand_cols[1]:
+            st.image(str(LOGO_PATH), use_container_width=True)
+
+    st.markdown(
+        """
+        <div class="brand-footer">
+            Bu uygulamanın hazırlanması <strong>DEVRAN MÂLİ MÜŞAVİRLİK</strong> tarafından sağlanmıştır
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ---------------------------------------------------------
 # 1. M² HESAPLAMA
@@ -561,13 +853,42 @@ elif st.session_state.page == "experience":
                 "5 yıllık toplam hesabında dikkate alınabilecek tutar, girilen işlerin toplamı ile "
                 "en yüksek tek iş deneyim tutarının 3 katından düşük olanıdır."
             )
+
+            pdf_bytes = create_experience_pdf(
+                method_name="Son 5 yılda bitirilen inşaatların toplamı",
+                rows=row_results,
+                total_amount=capped_experience,
+                result_group=capped_group,
+                normal_total=total_experience,
+                normal_group=normal_group,
+                largest_row=largest_row,
+                three_times_limit=three_times_limit,
+                cap_applied=cap_applied,
+            )
+
+            st.download_button(
+                "📄 DÖKÜM AL",
+                data=pdf_bytes,
+                file_name=f"muteahhitlik_is_deneyim_dokumu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary",
+                key="download_exp5_pdf",
+            )
         else:
             st.info("Hesaplama için en az bir inşaatın alanını girin.")
 
     else:
         st.subheader("Son 15 yıldaki tek inşaat")
 
-        col_area, col_class = st.columns([1, 2])
+        col_parcel, col_area, col_class = st.columns([1.1, 1, 2])
+
+        with col_parcel:
+            ada_parsel = st.text_input(
+                "ADA PARSEL",
+                placeholder="Örn: 123 / 45",
+                key="exp15_parcel",
+            )
 
         with col_area:
             area = st.number_input(
@@ -617,6 +938,31 @@ elif st.session_state.page == "experience":
                     "Hesaplanan tutar G1 grubunun 2026 asgari iş deneyim tutarının altında kaldığı için "
                     "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
                 )
+
+            single_row = [{
+                "row": 1,
+                "ada_parsel": ada_parsel.strip() or "1. İnşaat",
+                "area": area,
+                "class": bclass,
+                "amount": total_experience,
+            }]
+
+            pdf_bytes = create_experience_pdf(
+                method_name="Son 15 yıldaki tek inşaatın 2 kat dikkate alınması",
+                rows=single_row,
+                total_amount=total_experience,
+                result_group=result_group,
+            )
+
+            st.download_button(
+                "📄 DÖKÜM AL",
+                data=pdf_bytes,
+                file_name=f"muteahhitlik_is_deneyim_dokumu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary",
+                key="download_exp15_pdf",
+            )
         else:
             st.info("Hesaplama için inşaat alanını girin.")
 
