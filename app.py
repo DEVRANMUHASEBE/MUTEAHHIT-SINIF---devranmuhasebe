@@ -733,13 +733,6 @@ def go(page):
 # ANA EKRAN
 # ---------------------------------------------------------
 if st.session_state.page == "home":
-    if LOGO_PATH.exists():
-        brand_cols = st.columns([1.35, 0.9, 1.35])
-        with brand_cols[1]:
-            st.markdown('<div class="brand-header">', unsafe_allow_html=True)
-            st.image(str(LOGO_PATH), use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
     st.markdown("""
     <div class="hero">
         <h1>🏗️ Müteahhitlik Sınıf Hesaplama</h1>
@@ -802,6 +795,11 @@ if st.session_state.page == "home":
     st.caption("Bilgilendirme amaçlıdır. Resmî başvuru/ruhsat işlemlerinde güncel YAMBİS ve ilgili idare kayıtları esas alınmalıdır.")
 
     st.divider()
+    if LOGO_PATH.exists():
+        brand_cols = st.columns([1.4, 1, 1.4])
+        with brand_cols[1]:
+            st.image(str(LOGO_PATH), use_container_width=True)
+
     st.markdown(
         """
         <div class="brand-footer">
