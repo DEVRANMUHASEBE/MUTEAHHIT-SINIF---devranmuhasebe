@@ -565,37 +565,6 @@ st.markdown("""
         box-shadow: 0 4px 16px rgba(0,0,0,.04);
     }
 
-    .click-card {
-        display: block;
-        text-decoration: none !important;
-        color: inherit !important;
-        padding: 1rem 1.05rem;
-        border: 1px solid #e6e9ef;
-        border-radius: 18px;
-        background: white;
-        margin-bottom: .9rem;
-        box-shadow: 0 4px 16px rgba(0,0,0,.04);
-        transition: all .18s ease;
-    }
-
-    .click-card:hover {
-        border-color: #cfd8ea;
-        box-shadow: 0 10px 22px rgba(0,0,0,.07);
-        transform: translateY(-1px);
-    }
-
-    .click-card .title {
-        font-weight: 700;
-        font-size: 1.06rem;
-        margin-bottom: .35rem;
-        color: #1d2a44;
-    }
-
-    .click-card .desc {
-        font-size: .92rem;
-        color: #6b7485;
-    }
-
     .result-card {
         padding: 1.25rem;
         border-radius: 20px;
@@ -635,21 +604,104 @@ st.markdown("""
 
     .brand-header {
         text-align: center;
-        margin-bottom: .9rem;
+        margin-bottom: .55rem;
     }
 
     .brand-header img {
-        max-width: 280px;
+        max-width: 170px;
         width: 100%;
         height: auto;
         display: block;
-        margin: 0 auto .35rem auto;
+        margin: 0 auto .2rem auto;
     }
 
     .brand-header-text {
         color: #172033;
         font-size: .92rem;
         font-weight: 600;
+    }
+
+    .click-card {
+        display: block;
+        text-decoration: none !important;
+        color: inherit !important;
+        padding: 1rem 1rem;
+        border: 1px solid #e6e9ef;
+        border-radius: 22px;
+        background: white;
+        margin-bottom: .95rem;
+        box-shadow: 0 4px 16px rgba(0,0,0,.04);
+        transition: all .18s ease;
+    }
+
+    .click-card:hover {
+        border-color: #cfd8ea;
+        box-shadow: 0 10px 22px rgba(0,0,0,.07);
+        transform: translateY(-1px);
+    }
+
+    .click-card-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .icon-badge {
+        min-width: 76px;
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        background: #f7f6f3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #172033;
+        font-size: 2rem;
+        font-weight: 700;
+        flex-shrink: 0;
+        border: 1px solid #ece8df;
+    }
+
+    .card-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .click-card .title {
+        font-weight: 800;
+        font-size: 1.06rem;
+        line-height: 1.28;
+        margin-bottom: .35rem;
+        color: #1d2a44;
+    }
+
+    .click-card .desc {
+        font-size: .92rem;
+        line-height: 1.38;
+        color: #6b7485;
+    }
+
+    .card-arrow {
+        color: #c79a3b;
+        font-size: 2rem;
+        line-height: 1;
+        flex-shrink: 0;
+        padding-left: .25rem;
+    }
+
+    @media (max-width: 640px) {
+        .icon-badge {
+            min-width: 64px;
+            width: 64px;
+            height: 64px;
+            font-size: 1.7rem;
+        }
+        .click-card .title {
+            font-size: 1rem;
+        }
+        .card-arrow {
+            font-size: 1.7rem;
+        }
     }
 
     .brand-footer {
@@ -682,9 +734,11 @@ def go(page):
 # ---------------------------------------------------------
 if st.session_state.page == "home":
     if LOGO_PATH.exists():
-        brand_cols = st.columns([1, 1.55, 1])
+        brand_cols = st.columns([1.35, 0.9, 1.35])
         with brand_cols[1]:
+            st.markdown('<div class="brand-header">', unsafe_allow_html=True)
             st.image(str(LOGO_PATH), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("""
     <div class="hero">
@@ -696,32 +750,50 @@ if st.session_state.page == "home":
     st.subheader("Ne hesaplamak istiyorsunuz?")
 
     st.markdown(
-        '''
+        """
         <a class="click-card" href="?page=m2">
-            <div class="title">1. Mevcut sınıfım ile kaç m² inşaat yapabilirim?</div>
-            <div class="desc">Yetki belge grubunuzu ve yapı sınıfını seçin.</div>
+            <div class="click-card-row">
+                <div class="icon-badge">㎡</div>
+                <div class="card-content">
+                    <div class="title">1. Mevcut sınıfım ile kaç m² inşaat yapabilirim?</div>
+                    <div class="desc">Yetki belge grubunuzu ve yapı sınıfını seçin.</div>
+                </div>
+                <div class="card-arrow">›</div>
+            </div>
         </a>
-        ''',
+        """,
         unsafe_allow_html=True
     )
 
     st.markdown(
-        '''
+        """
         <a class="click-card" href="?page=joint">
-            <div class="title">2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</div>
-            <div class="desc">Büyük ve küçük belge sınıfı olan ortakları seçin.</div>
+            <div class="click-card-row">
+                <div class="icon-badge">👥</div>
+                <div class="card-content">
+                    <div class="title">2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</div>
+                    <div class="desc">Büyük ve küçük belge sınıfı olan ortakları seçin.</div>
+                </div>
+                <div class="card-arrow">›</div>
+            </div>
         </a>
-        ''',
+        """,
         unsafe_allow_html=True
     )
 
     st.markdown(
-        '''
+        """
         <a class="click-card" href="?page=experience">
-            <div class="title">3. Bitirdiğim inşaatlar ile hangi sınıfı alabilirim?</div>
-            <div class="desc">Son 5 yıldaki işlerinizin toplamını veya son 15 yıldaki tek işinizi kullanın.</div>
+            <div class="click-card-row">
+                <div class="icon-badge">📋</div>
+                <div class="card-content">
+                    <div class="title">3. Bitirdiğim inşaatlar ile hangi sınıfı alabilirim?</div>
+                    <div class="desc">Son 5 yıldaki işlerinizin toplamını veya son 15 yıldaki tek işinizi kullanın.</div>
+                </div>
+                <div class="card-arrow">›</div>
+            </div>
         </a>
-        ''',
+        """,
         unsafe_allow_html=True
     )
 
