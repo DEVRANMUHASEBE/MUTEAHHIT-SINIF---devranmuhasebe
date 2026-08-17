@@ -633,6 +633,25 @@ st.markdown("""
         width: 100%;
     }
 
+    .brand-header {
+        text-align: center;
+        margin-bottom: .9rem;
+    }
+
+    .brand-header img {
+        max-width: 280px;
+        width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto .35rem auto;
+    }
+
+    .brand-header-text {
+        color: #172033;
+        font-size: .92rem;
+        font-weight: 600;
+    }
+
     .brand-footer {
         text-align: center;
         margin-top: 1.2rem;
@@ -658,17 +677,22 @@ def go(page):
     st.session_state.page = page
     st.rerun()
 
-st.markdown("""
-<div class="hero">
-    <h1>🏗️ Müteahhitlik Sınıf Hesaplama</h1>
-    <p>2026 yılı yapı müteahhitliği yetki belge grupları için hızlı hesaplama</p>
-</div>
-""", unsafe_allow_html=True)
-
 # ---------------------------------------------------------
 # ANA EKRAN
 # ---------------------------------------------------------
 if st.session_state.page == "home":
+    if LOGO_PATH.exists():
+        brand_cols = st.columns([1, 1.55, 1])
+        with brand_cols[1]:
+            st.image(str(LOGO_PATH), use_container_width=True)
+
+    st.markdown("""
+    <div class="hero">
+        <h1>🏗️ Müteahhitlik Sınıf Hesaplama</h1>
+        <p>2026 yılı yapı müteahhitliği yetki belge grupları için hızlı hesaplama</p>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.subheader("Ne hesaplamak istiyorsunuz?")
 
     st.markdown(
@@ -706,11 +730,6 @@ if st.session_state.page == "home":
     st.caption("Bilgilendirme amaçlıdır. Resmî başvuru/ruhsat işlemlerinde güncel YAMBİS ve ilgili idare kayıtları esas alınmalıdır.")
 
     st.divider()
-    if LOGO_PATH.exists():
-        brand_cols = st.columns([1.4, 1, 1.4])
-        with brand_cols[1]:
-            st.image(str(LOGO_PATH), use_container_width=True)
-
     st.markdown(
         """
         <div class="brand-footer">
@@ -724,6 +743,12 @@ if st.session_state.page == "home":
 # 1. M² HESAPLAMA
 # ---------------------------------------------------------
 elif st.session_state.page == "m2":
+    st.markdown("""
+    <div class="hero">
+        <h1>📐 Mevcut sınıfımla kaç m² yapabilirim?</h1>
+        <p>DEVRAN MÂLİ MÜŞAVİRLİK</p>
+    </div>
+    """, unsafe_allow_html=True)
     if st.button("← Ana Sayfa"):
         go("home")
 
@@ -773,6 +798,12 @@ elif st.session_state.page == "m2":
 # 2. İŞ ORTAKLIĞI / SINIF BİRLEŞTİRME
 # ---------------------------------------------------------
 elif st.session_state.page == "joint":
+    st.markdown("""
+    <div class="hero">
+        <h1>🤝 Sınıfları birleştirirsem hangi sınıf olur?</h1>
+        <p>DEVRAN MÂLİ MÜŞAVİRLİK</p>
+    </div>
+    """, unsafe_allow_html=True)
     if st.button("← Ana Sayfa"):
         go("home")
 
