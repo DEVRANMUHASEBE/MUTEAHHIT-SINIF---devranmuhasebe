@@ -140,6 +140,11 @@ def work_experience_group(amount):
 def building_class_label(code):
     return f"{code} — {BUILDING_CLASSES[code]}"
 
+
+def pdf_tl_text(value):
+    """PDF içinde para birimini daima TL olarak yaz."""
+    return fmt_tl(value).replace(" ₺", " TL")
+
 LOGO_PATH = Path(__file__).with_name("devran_logo.png")
 
 
@@ -401,7 +406,7 @@ def create_experience_pdf(
                 str(row.get("ada_parsel", "")),
                 f"{row.get('area', 0):,.0f}".replace(",", "."),
                 str(row.get("class", "")),
-                f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
+                pdf_tl_text(int(row.get("unit_cost", BUILDING_UNIT_COSTS.get(row.get("class"), 0)))),
             ])
         else:
             data.append([str(idx + 1), "", "", "", ""])
@@ -450,8 +455,8 @@ def create_experience_pdf(
     # 5 yıllık çoklu işte 3 kat kuralı devreye girdiyse normal toplam ayrı,
     # sınır sonrası dikkate alınan tutar ayrı gösterilir.
     raw_calc_amount = normal_total if (cap_applied and normal_total is not None) else total_amount
-    calc_text = fmt_tl(raw_calc_amount).replace(",00 ₺", " TL")
-    capped_text = fmt_tl(total_amount).replace(",00 ₺", " TL")
+    calc_text = pdf_tl_text(raw_calc_amount)
+    capped_text = pdf_tl_text(total_amount)
 
     experience_rows = [
         ("A", WORK_EXPERIENCE_MIN["A"]),
@@ -495,7 +500,7 @@ def create_experience_pdf(
         amount_text = (
             "Asgari iş deneyimi aranmaz."
             if min_amount is None
-            else fmt_tl(min_amount).replace(",00 ₺", " TL")
+            else pdf_tl_text(min_amount)
         )
         right_data.append([group_name, amount_text])
 
