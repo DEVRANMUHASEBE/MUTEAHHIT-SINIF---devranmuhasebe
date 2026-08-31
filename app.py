@@ -260,8 +260,8 @@ def create_experience_pdf(
         "PDFTitle",
         parent=styles["Title"],
         fontName=font_bold,
-        fontSize=17,
-        leading=19,
+        fontSize=15.5,
+        leading=17.5,
         alignment=TA_LEFT,
         textColor=colors.black,
         spaceAfter=2,
@@ -270,8 +270,8 @@ def create_experience_pdf(
         "PDFSub",
         parent=styles["Normal"],
         fontName=font_regular,
-        fontSize=9.8,
-        leading=12,
+        fontSize=9.0,
+        leading=10.5,
         alignment=TA_LEFT,
         textColor=colors.black,
         spaceAfter=6,
@@ -317,8 +317,8 @@ def create_experience_pdf(
         "PDFBigResult",
         parent=styles["Normal"],
         fontName=font_bold,
-        fontSize=29,
-        leading=32,
+        fontSize=25,
+        leading=27,
         alignment=TA_CENTER,
         textColor=colors.black,
     )
@@ -326,8 +326,8 @@ def create_experience_pdf(
         "PDFValue",
         parent=styles["Normal"],
         fontName=font_bold,
-        fontSize=22,
-        leading=25,
+        fontSize=17.5,
+        leading=19,
         alignment=TA_CENTER,
         textColor=colors.black,
     )
@@ -378,16 +378,16 @@ def create_experience_pdf(
         ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
         ("FONTNAME", (0, 0), (0, -1), font_bold),
         ("FONTNAME", (1, 0), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.7),
         ("LEADING", (0, 0), (-1, -1), 12),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.4),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(method_table)
-    story.append(Spacer(1, 2.5 * mm))
+    story.append(Spacer(1, 1.5 * mm))
 
     # Data table
     story.append(Paragraph("İNŞAAT BİLGİLERİ", section_style))
@@ -417,15 +417,15 @@ def create_experience_pdf(
         ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), font_bold),
         ("FONTNAME", (0, 1), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 9.1),
-        ("LEADING", (0, 0), (-1, -1), 11),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.9),
+        ("LEADING", (0, 0), (-1, -1), 9),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4.2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4.2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
     ]))
     story.append(info_table)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 1.5 * mm))
 
     # Result section
     left_result = Table(
@@ -442,35 +442,106 @@ def create_experience_pdf(
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
 
-    min_text = "Asgari iş deneyimi aranmaz" if result_min_amount is None else fmt_tl(result_min_amount).replace(",00 ₺", " TL")
-    calc_text = fmt_tl(total_amount).replace(",00 ₺", " TL")
+    # PDF'de gösterilecek hesap sonucu:
+    # 5 yıllık çoklu işte 3 kat kuralı devreye girdiyse normal toplam ayrı,
+    # sınır sonrası dikkate alınan tutar ayrı gösterilir.
+    raw_calc_amount = normal_total if (cap_applied and normal_total is not None) else total_amount
+    calc_text = fmt_tl(raw_calc_amount).replace(",00 ₺", " TL")
+    capped_text = fmt_tl(total_amount).replace(",00 ₺", " TL")
 
-    # Sağ taraf ikiye bölünür:
-    # ÜST = hesaplamanın gerçek sonucu / dikkate alınan iş deneyim tutarı
-    # ALT = çıkan belge grubunun o yılki asgari iş deneyim tutarı
+    experience_rows = [
+        ("A", WORK_EXPERIENCE_MIN["A"]),
+        ("B", WORK_EXPERIENCE_MIN["B"]),
+        ("B1", WORK_EXPERIENCE_MIN["B1"]),
+        ("C", WORK_EXPERIENCE_MIN["C"]),
+        ("C1", WORK_EXPERIENCE_MIN["C1"]),
+        ("D", WORK_EXPERIENCE_MIN["D"]),
+        ("D1", WORK_EXPERIENCE_MIN["D1"]),
+        ("E", WORK_EXPERIENCE_MIN["E"]),
+        ("E1", WORK_EXPERIENCE_MIN["E1"]),
+        ("F", WORK_EXPERIENCE_MIN["F"]),
+        ("F1", WORK_EXPERIENCE_MIN["F1"]),
+        ("G", WORK_EXPERIENCE_MIN["G"]),
+        ("G1", WORK_EXPERIENCE_MIN["G1"]),
+        ("H", None),
+    ]
+
+    right_data = [
+        [Paragraph("HESAPLAMA SONUCU", center_bold), ""],
+        [Paragraph(calc_text, value_style), ""],
+    ]
+
+    # Bu iki satır SADECE 3 kat sınırı devreye girdiyse PDF'de görünür.
+    if cap_applied:
+        right_data.extend([
+            [Paragraph("3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR", center_bold), ""],
+            [Paragraph(capped_text, value_style), ""],
+        ])
+    else:
+        right_data.append([Paragraph("Dikkate alınan iş deneyim tutarı", center_bold), ""])
+
+    threshold_title_row = len(right_data)
+    right_data.append([
+        Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARLARI", center_bold),
+        ""
+    ])
+
+    first_threshold_row = len(right_data)
+    for group_name, min_amount in experience_rows:
+        amount_text = (
+            "Asgari iş deneyimi aranmaz."
+            if min_amount is None
+            else fmt_tl(min_amount).replace(",00 ₺", " TL")
+        )
+        right_data.append([group_name, amount_text])
+
     right_result = Table(
-        [
-            [Paragraph("HESAPLAMA SONUCU", center_bold)],
-            [Paragraph(calc_text, value_style)],
-            [Paragraph("Dikkate alınan iş deneyim tutarı", center_bold)],
-            [Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARI", center_bold)],
-            [Paragraph(min_text, value_style)],
-            [Paragraph(f"({result_group} Grubu)", center_bold)],
-        ],
-        colWidths=[122 * mm],
+        right_data,
+        colWidths=[39 * mm, 83 * mm],
+        hAlign="CENTER",
     )
-    right_result.setStyle(TableStyle([
+
+    right_style = [
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("LINEABOVE", (0, 3), (-1, 3), 0.8, colors.black),
+        ("SPAN", (0, 0), (1, 0)),
+        ("SPAN", (0, 1), (1, 1)),
+        ("FONTNAME", (0, 0), (-1, threshold_title_row), font_bold),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3.4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.4),
-    ]))
+        ("FONTSIZE", (0, first_threshold_row), (-1, -1), 6.15),
+        ("FONTNAME", (0, first_threshold_row), (-1, -1), font_regular),
+        ("INNERGRID", (0, first_threshold_row), (-1, -1), 0.32, colors.black),
+        ("LINEABOVE", (0, threshold_title_row), (-1, threshold_title_row), 0.8, colors.black),
+        ("SPAN", (0, threshold_title_row), (1, threshold_title_row)),
+        ("TOPPADDING", (0, 0), (-1, threshold_title_row), 1.8),
+        ("BOTTOMPADDING", (0, 0), (-1, threshold_title_row), 1.8),
+        ("TOPPADDING", (0, first_threshold_row), (-1, -1), 0.55),
+        ("BOTTOMPADDING", (0, first_threshold_row), (-1, -1), 0.55),
+    ]
+
+    # 3 kat kuralı satırları varsa iki kolonun tamamını kaplasın.
+    if cap_applied:
+        right_style.extend([
+            ("SPAN", (0, 2), (1, 2)),
+            ("SPAN", (0, 3), (1, 3)),
+            ("LINEABOVE", (0, 2), (-1, 2), 0.55, colors.black),
+        ])
+    else:
+        right_style.append(("SPAN", (0, 2), (1, 2)))
+
+    # Hak kazanılan grubu tabloda kalın ve belirgin göster.
+    result_threshold_row = first_threshold_row + [g for g, _ in experience_rows].index(result_group)
+    right_style.extend([
+        ("FONTNAME", (0, result_threshold_row), (-1, result_threshold_row), font_bold),
+        ("LINEABOVE", (0, result_threshold_row), (-1, result_threshold_row), 0.75, colors.black),
+        ("LINEBELOW", (0, result_threshold_row), (-1, result_threshold_row), 0.75, colors.black),
+    ])
+
+    right_result.setStyle(TableStyle(right_style))
 
     result_table = Table([[left_result, right_result]], colWidths=[55 * mm, 125 * mm], hAlign="LEFT")
     result_table.setStyle(TableStyle([
@@ -486,8 +557,8 @@ def create_experience_pdf(
     )
     note_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
@@ -507,7 +578,7 @@ def create_experience_pdf(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.black),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(footer_table)
@@ -565,6 +636,37 @@ st.markdown("""
         box-shadow: 0 4px 16px rgba(0,0,0,.04);
     }
 
+    .click-card {
+        display: block;
+        text-decoration: none !important;
+        color: inherit !important;
+        padding: 1rem 1.05rem;
+        border: 1px solid #e6e9ef;
+        border-radius: 18px;
+        background: white;
+        margin-bottom: .9rem;
+        box-shadow: 0 4px 16px rgba(0,0,0,.04);
+        transition: all .18s ease;
+    }
+
+    .click-card:hover {
+        border-color: #cfd8ea;
+        box-shadow: 0 10px 22px rgba(0,0,0,.07);
+        transform: translateY(-1px);
+    }
+
+    .click-card .title {
+        font-weight: 700;
+        font-size: 1.06rem;
+        margin-bottom: .35rem;
+        color: #1d2a44;
+    }
+
+    .click-card .desc {
+        font-size: .92rem;
+        color: #6b7485;
+    }
+
     .result-card {
         padding: 1.25rem;
         border-radius: 20px;
@@ -602,108 +704,6 @@ st.markdown("""
         width: 100%;
     }
 
-    .brand-header {
-        text-align: center;
-        margin-bottom: .55rem;
-    }
-
-    .brand-header img {
-        max-width: 170px;
-        width: 100%;
-        height: auto;
-        display: block;
-        margin: 0 auto .2rem auto;
-    }
-
-    .brand-header-text {
-        color: #172033;
-        font-size: .92rem;
-        font-weight: 600;
-    }
-
-    .click-card {
-        display: block;
-        text-decoration: none !important;
-        color: inherit !important;
-        padding: 1rem 1rem;
-        border: 1px solid #e6e9ef;
-        border-radius: 22px;
-        background: white;
-        margin-bottom: .95rem;
-        box-shadow: 0 4px 16px rgba(0,0,0,.04);
-        transition: all .18s ease;
-    }
-
-    .click-card:hover {
-        border-color: #cfd8ea;
-        box-shadow: 0 10px 22px rgba(0,0,0,.07);
-        transform: translateY(-1px);
-    }
-
-    .click-card-row {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .icon-badge {
-        min-width: 76px;
-        width: 76px;
-        height: 76px;
-        border-radius: 50%;
-        background: #f7f6f3;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #172033;
-        font-size: 2rem;
-        font-weight: 700;
-        flex-shrink: 0;
-        border: 1px solid #ece8df;
-    }
-
-    .card-content {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .click-card .title {
-        font-weight: 800;
-        font-size: 1.06rem;
-        line-height: 1.28;
-        margin-bottom: .35rem;
-        color: #1d2a44;
-    }
-
-    .click-card .desc {
-        font-size: .92rem;
-        line-height: 1.38;
-        color: #6b7485;
-    }
-
-    .card-arrow {
-        color: #c79a3b;
-        font-size: 2rem;
-        line-height: 1;
-        flex-shrink: 0;
-        padding-left: .25rem;
-    }
-
-    @media (max-width: 640px) {
-        .icon-badge {
-            min-width: 64px;
-            width: 64px;
-            height: 64px;
-            font-size: 1.7rem;
-        }
-        .click-card .title {
-            font-size: 1rem;
-        }
-        .card-arrow {
-            font-size: 1.7rem;
-        }
-    }
-
     .brand-footer {
         text-align: center;
         margin-top: 1.2rem;
@@ -714,6 +714,67 @@ st.markdown("""
 
     .brand-footer strong {
         color: #172033;
+    }
+
+    .visual-card {
+        border-radius: 22px;
+        padding: 1rem;
+    }
+
+    .visual-card-row {
+        display: flex;
+        align-items: center;
+        gap: .9rem;
+    }
+
+    .visual-icon {
+        width: 66px;
+        min-width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        background: #f7f6f3;
+        border: 1px solid #ebe7df;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.7rem;
+        font-weight: 800;
+        color: #172033;
+    }
+
+    .visual-text {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .visual-card .title {
+        font-weight: 800;
+        line-height: 1.3;
+    }
+
+    .visual-card .desc {
+        line-height: 1.4;
+    }
+
+    .visual-arrow {
+        color: #c49a3a;
+        font-size: 2rem;
+        font-weight: 700;
+    }
+
+    @media (max-width: 640px) {
+        .visual-icon {
+            width: 58px;
+            min-width: 58px;
+            height: 58px;
+            font-size: 1.5rem;
+        }
+        .visual-card-row {
+            gap: .7rem;
+        }
+        .visual-arrow {
+            font-size: 1.7rem;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -729,29 +790,29 @@ def go(page):
     st.session_state.page = page
     st.rerun()
 
+st.markdown("""
+<div class="hero">
+    <h1>🏗️ Müteahhitlik Sınıf Hesaplama</h1>
+    <p>2026 yılı yapı müteahhitliği yetki belge grupları için hızlı hesaplama</p>
+</div>
+""", unsafe_allow_html=True)
+
 # ---------------------------------------------------------
 # ANA EKRAN
 # ---------------------------------------------------------
 if st.session_state.page == "home":
-    st.markdown("""
-    <div class="hero">
-        <h1>🏗️ Müteahhitlik Sınıf Hesaplama</h1>
-        <p>2026 yılı yapı müteahhitliği yetki belge grupları için hızlı hesaplama</p>
-    </div>
-    """, unsafe_allow_html=True)
-
     st.subheader("Ne hesaplamak istiyorsunuz?")
 
     st.markdown(
         """
-        <a class="click-card" href="?page=m2">
-            <div class="click-card-row">
-                <div class="icon-badge">㎡</div>
-                <div class="card-content">
+        <a class="click-card visual-card" href="?page=m2">
+            <div class="visual-card-row">
+                <div class="visual-icon">㎡</div>
+                <div class="visual-text">
                     <div class="title">1. Mevcut sınıfım ile kaç m² inşaat yapabilirim?</div>
                     <div class="desc">Yetki belge grubunuzu ve yapı sınıfını seçin.</div>
                 </div>
-                <div class="card-arrow">›</div>
+                <div class="visual-arrow">›</div>
             </div>
         </a>
         """,
@@ -760,14 +821,14 @@ if st.session_state.page == "home":
 
     st.markdown(
         """
-        <a class="click-card" href="?page=joint">
-            <div class="click-card-row">
-                <div class="icon-badge">👥</div>
-                <div class="card-content">
+        <a class="click-card visual-card" href="?page=joint">
+            <div class="visual-card-row">
+                <div class="visual-icon">👥</div>
+                <div class="visual-text">
                     <div class="title">2. Hangi sınıfları birleştirsem hangi sınıfı elde ederiz?</div>
                     <div class="desc">Büyük ve küçük belge sınıfı olan ortakları seçin.</div>
                 </div>
-                <div class="card-arrow">›</div>
+                <div class="visual-arrow">›</div>
             </div>
         </a>
         """,
@@ -776,14 +837,14 @@ if st.session_state.page == "home":
 
     st.markdown(
         """
-        <a class="click-card" href="?page=experience">
-            <div class="click-card-row">
-                <div class="icon-badge">📋</div>
-                <div class="card-content">
+        <a class="click-card visual-card" href="?page=experience">
+            <div class="visual-card-row">
+                <div class="visual-icon">📋</div>
+                <div class="visual-text">
                     <div class="title">3. Bitirdiğim inşaatlar ile hangi sınıfı alabilirim?</div>
                     <div class="desc">Son 5 yıldaki işlerinizin toplamını veya son 15 yıldaki tek işinizi kullanın.</div>
                 </div>
-                <div class="card-arrow">›</div>
+                <div class="visual-arrow">›</div>
             </div>
         </a>
         """,
@@ -813,12 +874,6 @@ if st.session_state.page == "home":
 # 1. M² HESAPLAMA
 # ---------------------------------------------------------
 elif st.session_state.page == "m2":
-    st.markdown("""
-    <div class="hero">
-        <h1>📐 Mevcut sınıfımla kaç m² yapabilirim?</h1>
-        <p>DEVRAN MÂLİ MÜŞAVİRLİK</p>
-    </div>
-    """, unsafe_allow_html=True)
     if st.button("← Ana Sayfa"):
         go("home")
 
@@ -868,12 +923,6 @@ elif st.session_state.page == "m2":
 # 2. İŞ ORTAKLIĞI / SINIF BİRLEŞTİRME
 # ---------------------------------------------------------
 elif st.session_state.page == "joint":
-    st.markdown("""
-    <div class="hero">
-        <h1>🤝 Sınıfları birleştirirsem hangi sınıf olur?</h1>
-        <p>DEVRAN MÂLİ MÜŞAVİRLİK</p>
-    </div>
-    """, unsafe_allow_html=True)
     if st.button("← Ana Sayfa"):
         go("home")
 
