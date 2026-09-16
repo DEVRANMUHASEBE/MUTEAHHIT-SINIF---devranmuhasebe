@@ -140,11 +140,6 @@ def work_experience_group(amount):
 def building_class_label(code):
     return f"{code} — {BUILDING_CLASSES[code]}"
 
-
-def pdf_tl_text(value):
-    """PDF içinde para birimini daima TL olarak yaz."""
-    return fmt_tl(value).replace(" ₺", " TL")
-
 LOGO_PATH = Path(__file__).with_name("devran_logo.png")
 
 
@@ -406,7 +401,7 @@ def create_experience_pdf(
                 str(row.get("ada_parsel", "")),
                 f"{row.get('area', 0):,.0f}".replace(",", "."),
                 str(row.get("class", "")),
-                pdf_tl_text(int(row.get("unit_cost", BUILDING_UNIT_COSTS.get(row.get("class"), 0)))),
+                f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
             ])
         else:
             data.append([str(idx + 1), "", "", "", ""])
@@ -455,8 +450,8 @@ def create_experience_pdf(
     # 5 yıllık çoklu işte 3 kat kuralı devreye girdiyse normal toplam ayrı,
     # sınır sonrası dikkate alınan tutar ayrı gösterilir.
     raw_calc_amount = normal_total if (cap_applied and normal_total is not None) else total_amount
-    calc_text = pdf_tl_text(raw_calc_amount)
-    capped_text = pdf_tl_text(total_amount)
+    calc_text = fmt_tl(raw_calc_amount).replace(" ₺", " TL")
+    capped_text = fmt_tl(total_amount).replace(" ₺", " TL")
 
     experience_rows = [
         ("A", WORK_EXPERIENCE_MIN["A"]),
@@ -500,7 +495,7 @@ def create_experience_pdf(
         amount_text = (
             "Asgari iş deneyimi aranmaz."
             if min_amount is None
-            else pdf_tl_text(min_amount)
+            else fmt_tl(min_amount).replace(",00 ₺", " TL")
         )
         right_data.append([group_name, amount_text])
 
@@ -781,6 +776,29 @@ st.markdown("""
             font-size: 1.7rem;
         }
     }
+
+    .apply-btn-wrap {
+        margin: .25rem 0 1rem 0;
+    }
+
+    .apply-btn {
+        display: inline-block;
+        background: #d92828;
+        color: #ffffff !important;
+        text-decoration: none !important;
+        font-weight: 800;
+        font-size: .98rem;
+        padding: .72rem 1.25rem;
+        border-radius: 12px;
+        box-shadow: 0 6px 16px rgba(217, 40, 40, .22);
+        border: 1px solid #be1f1f;
+        letter-spacing: .2px;
+    }
+
+    .apply-btn:hover {
+        background: #bf1f1f;
+        color: #ffffff !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -854,6 +872,17 @@ if st.session_state.page == "home":
         </a>
         """,
         unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <div class="apply-btn-wrap">
+            <a class="apply-btn" href="https://ankara.csb.gov.tr/muteahhitlik-belgesi-islemleri-icin-iletisim-i-98574" target="_blank">
+                BAŞVURU
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.divider()
