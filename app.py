@@ -239,6 +239,7 @@ def create_experience_pdf(
     largest_row=None,
     three_times_limit=None,
     cap_applied=False,
+    notes=None,
 ):
     """Sade PDF dökümü oluşturur: detaylı hesaplama yok, sadece özet tablo ve sonuç."""
     buffer = BytesIO()
@@ -426,6 +427,52 @@ def create_experience_pdf(
     ]))
     story.append(info_table)
     story.append(Spacer(1, 1.5 * mm))
+
+    # Kullanıcının inşaat bazında yazdığı notlar.
+    clean_notes = [
+        n for n in (notes or [])
+        if str(n.get("note", "")).strip()
+    ]
+
+    if clean_notes:
+        story.append(Paragraph("NOTLAR", section_style))
+
+        notes_data = [["Ada / Parsel", "Not"]]
+        for n in clean_notes:
+            notes_data.append([
+                Paragraph(
+                    str(n.get("ada_parsel", "-")),
+                    small_style,
+                ),
+                Paragraph(
+                    str(n.get("note", "")),
+                    small_style,
+                ),
+            ])
+
+        notes_table = Table(
+            notes_data,
+            colWidths=[48 * mm, 111 * mm],
+            repeatRows=1,
+            hAlign="LEFT",
+        )
+        notes_table.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
+            ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.black),
+            ("FONTNAME", (0, 0), (-1, 0), font_bold),
+            ("FONTNAME", (0, 1), (-1, -1), font_regular),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.2),
+            ("LEADING", (0, 0), (-1, -1), 8.5),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ]))
+
+        story.append(notes_table)
+        story.append(Spacer(1, 1.5 * mm))
 
     # Result section
     left_result = Table(
@@ -1286,6 +1333,15 @@ elif st.session_state.page == "experience":
                 "5 yıllık toplamda 3 kat sınırı, en yüksek hisse sonrası inşaat deneyimi üzerinden hesaplanır."
             )
 
+            pdf_notes = [
+                {
+                    "ada_parsel": p["ada_parsel"],
+                    "note": p["note"],
+                }
+                for p in project_results
+                if p.get("note", "").strip()
+            ]
+
             pdf_bytes = create_experience_pdf(
                 method_name="Son 5 yılda bitirilen inşaatların toplamı",
                 rows=row_results,
@@ -1296,6 +1352,7 @@ elif st.session_state.page == "experience":
                 largest_row=largest_project,
                 three_times_limit=three_times_limit,
                 cap_applied=cap_applied,
+                notes=pdf_notes,
             )
 
             st.download_button(
@@ -1454,11 +1511,19 @@ elif st.session_state.page == "experience":
                     "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
                 )
 
+            pdf_notes = []
+            if construction_note.strip():
+                pdf_notes.append({
+                    "ada_parsel": ada_parsel.strip() or "1. İnşaat",
+                    "note": construction_note.strip(),
+                })
+
             pdf_bytes = create_experience_pdf(
                 method_name="Son 15 yıldaki tek inşaatın 2 kat dikkate alınması",
                 rows=single_rows,
                 total_amount=total_experience,
                 result_group=result_group,
+                notes=pdf_notes,
             )
 
             st.download_button(
