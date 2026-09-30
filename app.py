@@ -716,6 +716,28 @@ st.markdown("""
         color: #172033;
     }
 
+    .apply-btn-wrap {
+        margin: .25rem 0 1rem 0;
+    }
+
+    .apply-btn {
+        display: inline-block;
+        background: #d92828;
+        color: #ffffff !important;
+        text-decoration: none !important;
+        font-weight: 800;
+        font-size: .98rem;
+        padding: .72rem 1.25rem;
+        border-radius: 12px;
+        box-shadow: 0 6px 16px rgba(217, 40, 40, .22);
+        border: 1px solid #be1f1f;
+    }
+
+    .apply-btn:hover {
+        background: #bf1f1f;
+        color: #ffffff !important;
+    }
+
     .visual-card {
         border-radius: 22px;
         padding: 1rem;
@@ -775,29 +797,6 @@ st.markdown("""
         .visual-arrow {
             font-size: 1.7rem;
         }
-    }
-
-    .apply-btn-wrap {
-        margin: .25rem 0 1rem 0;
-    }
-
-    .apply-btn {
-        display: inline-block;
-        background: #d92828;
-        color: #ffffff !important;
-        text-decoration: none !important;
-        font-weight: 800;
-        font-size: .98rem;
-        padding: .72rem 1.25rem;
-        border-radius: 12px;
-        box-shadow: 0 6px 16px rgba(217, 40, 40, .22);
-        border: 1px solid #be1f1f;
-        letter-spacing: .2px;
-    }
-
-    .apply-btn:hover {
-        background: #bf1f1f;
-        color: #ffffff !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -877,7 +876,9 @@ if st.session_state.page == "home":
     st.markdown(
         """
         <div class="apply-btn-wrap">
-            <a class="apply-btn" href="https://ankara.csb.gov.tr/muteahhitlik-belgesi-islemleri-icin-iletisim-i-98574" target="_blank">
+            <a class="apply-btn"
+               href="https://ankara.csb.gov.tr/muteahhitlik-belgesi-islemleri-icin-iletisim-i-98574"
+               target="_blank">
                 BAŞVURU
             </a>
         </div>
@@ -1056,7 +1057,14 @@ elif st.session_state.page == "experience":
         entered_rows = 0
         row_results = []
 
-        for i in range(1, 11):
+        # İlk açılışta sadece 1 inşaat gösterilir.
+        # Kullanıcı + İNŞAAT EKLE butonuna bastıkça en fazla 10 satıra kadar açılır.
+        if "exp5_visible_rows" not in st.session_state:
+            st.session_state.exp5_visible_rows = 1
+
+        visible_rows = min(max(int(st.session_state.exp5_visible_rows), 1), 10)
+
+        for i in range(1, visible_rows + 1):
             st.markdown(f"**{i}. İNŞAAT**")
             col_parcel, col_area, col_class, col_cost = st.columns([1.05, 0.9, 1.55, 1.0])
 
@@ -1096,6 +1104,13 @@ elif st.session_state.page == "experience":
                     unsafe_allow_html=True,
                 )
 
+            # Her inşaat için kullanıcıya özel kısa not alanı.
+            construction_note = st.text_input(
+                "NOT",
+                placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...",
+                key=f"exp5_note_{i}",
+            )
+
             if area > 0:
                 row_amount = area * unit_cost * 0.85 * 0.90
                 total_experience += row_amount
@@ -1107,6 +1122,7 @@ elif st.session_state.page == "experience":
                     "area": area,
                     "class": bclass,
                     "unit_cost": unit_cost,
+                    "note": construction_note.strip(),
                     "amount": row_amount,
                 })
 
@@ -1116,8 +1132,20 @@ elif st.session_state.page == "experience":
                     f"0,85 × 0,90 = **{fmt_tl(row_amount)}**"
                 )
 
-            if i < 10:
+            if i < visible_rows:
                 st.divider()
+
+        st.write("")
+        if visible_rows < 10:
+            if st.button(
+                "＋ İNŞAAT EKLE",
+                key="add_exp5_row",
+                use_container_width=True,
+            ):
+                st.session_state.exp5_visible_rows = visible_rows + 1
+                st.rerun()
+        else:
+            st.caption("En fazla 10 inşaat ekleyebilirsiniz.")
 
         if entered_rows > 0:
             # Normal toplamdan çıkan grup
