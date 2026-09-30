@@ -392,7 +392,7 @@ def create_experience_pdf(
     # Data table
     story.append(Paragraph("İNŞAAT BİLGİLERİ", section_style))
     data = [["Sıra", "Ada Parsel", "İnşaat Alanı (m²)", "Yapı Sınıfı", "m² Maliyeti (TL)"]]
-    max_rows = max(len(rows), 10 if len(rows) > 1 else 1)
+    max_rows = max(len(rows), 1)
     for idx in range(max_rows):
         if idx < len(rows):
             row = rows[idx]
@@ -1047,95 +1047,176 @@ elif st.session_state.page == "experience":
 
     st.caption(
         "2026 güncel yapı yaklaşık birim maliyetleri otomatik kullanılır. "
-        "İnşaat alanını m² olarak girip güncel yapı sınıfını seçmeniz yeterlidir."
+        "İlk açılışta normal tek inşaat satırı gelir. "
+        "Aynı ada/parselde farklı yapı sınıfında blok/bölüm varsa BLOK EKLE ile ilave satır açabilirsiniz. "
+        "Ada/parsel alanına isterseniz blok adını da yazabilirsiniz. "
+        "Aynı inşaat altındaki satırlar birlikte toplanır ve inşaat hissesi uygulanır."
     )
 
+    # ---------------------------------------------------------
+    # SON 5 YIL
+    # ---------------------------------------------------------
     if method.startswith("1"):
         st.subheader("Son 5 yılda bitirilen inşaatlar")
 
         total_experience = 0.0
-        entered_rows = 0
-        row_results = []
+        entered_projects = 0
+        row_results = []       # PDF için blok bazlı satırlar
+        project_results = []   # 3 kat kuralı için inşaat/ada-parsel bazlı toplamlar
 
-        # İlk açılışta sadece 1 inşaat gösterilir.
-        # Kullanıcı + İNŞAAT EKLE butonuna bastıkça en fazla 10 satıra kadar açılır.
         if "exp5_visible_rows" not in st.session_state:
             st.session_state.exp5_visible_rows = 1
 
         visible_rows = min(max(int(st.session_state.exp5_visible_rows), 1), 10)
 
         for i in range(1, visible_rows + 1):
-            st.markdown(f"**{i}. İNŞAAT**")
-            col_parcel, col_area, col_class, col_cost = st.columns([1.05, 0.9, 1.55, 1.0])
+            st.markdown(f"### {i}. İNŞAAT")
+
+            # İnşaat üst bilgileri: ada/parsel + hisse
+            col_parcel, col_share = st.columns([1.7, 0.8])
 
             with col_parcel:
                 ada_parsel = st.text_input(
-                    "ADA PARSEL",
-                    placeholder="Örn: 123 / 45",
+                    "ADA PARSEL / BLOK BİLGİSİ",
+                    placeholder="Örn: 123 / 45 veya 123 / 45 A Blok",
                     key=f"exp5_parcel_{i}",
                 )
 
-            with col_area:
-                area = st.number_input(
-                    "İNŞAAT ALANI (m²)",
+            with col_share:
+                share = st.number_input(
+                    "İNŞAAT HİSSESİ (%)",
                     min_value=0.0,
-                    step=1.0,
-                    value=0.0,
-                    key=f"exp5_area_{i}",
+                    max_value=100.0,
+                    value=100.0,
+                    step=0.01,
+                    format="%.2f",
+                    key=f"exp5_share_{i}",
                 )
 
-            with col_class:
-                bclass = st.selectbox(
-                    "GÜNCEL İNŞAAT SINIFI",
-                    list(BUILDING_UNIT_COSTS.keys()),
-                    format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
-                    index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
-                    key=f"exp5_class_{i}",
-                )
+            # Her inşaat ilk açılışta tek normal satırla başlar.
+            # BLOK EKLE ile ilave satırlar açılır.
+            block_count_key = f"exp5_block_count_{i}"
+            if block_count_key not in st.session_state:
+                st.session_state[block_count_key] = 1
 
-            unit_cost = BUILDING_UNIT_COSTS[bclass]
+            block_count = min(max(int(st.session_state[block_count_key]), 1), 10)
 
-            with col_cost:
-                st.markdown("**GÜNCEL m² MALİYETİ**")
-                st.markdown(
-                    f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
-                    f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
-                    f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
-                    unsafe_allow_html=True,
-                )
+            project_gross_amount = 0.0
+            project_has_area = False
 
-            # Her inşaat için kullanıcıya özel kısa not alanı.
+            for j in range(1, block_count + 1):
+                # İlk satır normal inşaat satırıdır; otomatik blok adı yoktur.
+                # İkinci ve sonraki satırlar yalnızca BLOK EKLE ile açılır.
+                if j == 1:
+                    st.markdown("**İNŞAAT BİLGİLERİ**")
+                else:
+                    st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
+
+                if j == 1:
+                    row_ada_parsel = ada_parsel
+                else:
+                    row_ada_parsel = st.text_input(
+                        "ADA PARSEL / BLOK BİLGİSİ",
+                        value=ada_parsel,
+                        placeholder="Örn: 123 / 45 A Blok",
+                        key=f"exp5_row_parcel_{i}_{j}",
+                    )
+
+                col_area, col_class, col_cost = st.columns([0.95, 1.65, 1.0])
+
+                with col_area:
+                    area = st.number_input(
+                        "İNŞAAT ALANI (m²)",
+                        min_value=0.0,
+                        step=1.0,
+                        value=0.0,
+                        key=f"exp5_area_{i}_{j}",
+                    )
+
+                with col_class:
+                    bclass = st.selectbox(
+                        "GÜNCEL İNŞAAT SINIFI",
+                        list(BUILDING_UNIT_COSTS.keys()),
+                        format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
+                        index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
+                        key=f"exp5_class_{i}_{j}",
+                    )
+
+                unit_cost = BUILDING_UNIT_COSTS[bclass]
+
+                with col_cost:
+                    st.markdown("**GÜNCEL m² MALİYETİ**")
+                    st.markdown(
+                        f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
+                        f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
+                        f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                if area > 0:
+                    project_has_area = True
+                    block_gross = area * unit_cost * 0.85 * 0.90
+                    project_gross_amount += block_gross
+
+                    # PDF'de aynı ada/parsel + hisse görünür; blok sıra bilgisinde ayırt edilir.
+                    row_results.append({
+                        "row": f"{i}.{j}",
+                        "ada_parsel": (
+                            f"{row_ada_parsel.strip() or ada_parsel.strip() or f'{i}. İnşaat'} "
+                            f"(%{share:g})"
+                        ),
+                        "area": area,
+                        "class": bclass,
+                        "unit_cost": unit_cost,
+                        "amount": block_gross * (share / 100.0),
+                    })
+
+                if j < block_count:
+                    st.markdown("---")
+
+            # Aynı ada/parselde yeni blok
+            if block_count < 10:
+                if st.button(
+                    "＋ BLOK EKLE",
+                    key=f"add_exp5_block_{i}",
+                    use_container_width=True,
+                ):
+                    st.session_state[block_count_key] = block_count + 1
+                    st.rerun()
+            else:
+                st.caption("Bu inşaat için en fazla 10 blok ekleyebilirsiniz.")
+
             construction_note = st.text_input(
                 "NOT",
                 placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...",
                 key=f"exp5_note_{i}",
             )
 
-            if area > 0:
-                row_amount = area * unit_cost * 0.85 * 0.90
-                total_experience += row_amount
-                entered_rows += 1
+            if project_has_area:
+                entered_projects += 1
+                project_amount = project_gross_amount * (share / 100.0)
+                total_experience += project_amount
 
-                row_results.append({
+                project_results.append({
                     "row": i,
                     "ada_parsel": ada_parsel.strip() or f"{i}. İnşaat",
-                    "area": area,
-                    "class": bclass,
-                    "unit_cost": unit_cost,
+                    "share": share,
                     "note": construction_note.strip(),
-                    "amount": row_amount,
+                    "amount": project_amount,
+                    "gross_amount": project_gross_amount,
+                    "block_count": block_count,
                 })
 
-                st.caption(
-                    f"{fmt_m2(area)} × "
-                    f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m² × "
-                    f"0,85 × 0,90 = **{fmt_tl(row_amount)}**"
+                st.info(
+                    f"**{i}. inşaat dikkate alınan iş deneyimi:** {fmt_tl(project_amount)} "
+                    f"— Hisse: **%{share:g}** — Satır sayısı: **{block_count}**"
                 )
 
             if i < visible_rows:
                 st.divider()
 
         st.write("")
+
         if visible_rows < 10:
             if st.button(
                 "＋ İNŞAAT EKLE",
@@ -1147,15 +1228,13 @@ elif st.session_state.page == "experience":
         else:
             st.caption("En fazla 10 inşaat ekleyebilirsiniz.")
 
-        if entered_rows > 0:
-            # Normal toplamdan çıkan grup
+        if entered_projects > 0:
             normal_group = work_experience_group(total_experience)
 
-            # 3 kat kuralı:
-            # En yüksek iş deneyim tutarına sahip tek satırın 3 katı,
-            # 5 yıllık toplam iş deneyimi için üst sınırdır.
-            largest_row = max(row_results, key=lambda x: x["amount"])
-            three_times_limit = largest_row["amount"] * 3
+            # 3 kat kuralında blok değil, aynı ada/parseldeki inşaatın
+            # bloklar toplamı ve hisse sonrası iş deneyimi esas alınır.
+            largest_project = max(project_results, key=lambda x: x["amount"])
+            three_times_limit = largest_project["amount"] * 3
             capped_experience = min(total_experience, three_times_limit)
             capped_group = work_experience_group(capped_experience)
             cap_applied = total_experience > three_times_limit
@@ -1169,8 +1248,9 @@ elif st.session_state.page == "experience":
             """, unsafe_allow_html=True)
 
             st.info(
-                f"**En büyük iş deneyimi:** {largest_row['ada_parsel']} — "
-                f"{fmt_tl(largest_row['amount'])}\n\n"
+                f"**En büyük inşaat deneyimi:** {largest_project['ada_parsel']} "
+                f"(%{largest_project['share']:g} hisse) — "
+                f"{fmt_tl(largest_project['amount'])}\n\n"
                 f"**3 katı üst sınırı:** {fmt_tl(three_times_limit)}"
             )
 
@@ -1196,13 +1276,14 @@ elif st.session_state.page == "experience":
                     )
             else:
                 st.success(
-                    f"✅ Toplam iş deneyiminiz, en büyük iş deneyiminin 3 katı sınırını aşmıyor. "
+                    f"✅ Toplam iş deneyiminiz, en büyük inşaat deneyiminin 3 katı sınırını aşmıyor. "
                     f"Asgari iş deneyim tutarına göre **{normal_group} grubu** sonucu oluşuyor."
                 )
 
             st.caption(
-                "5 yıllık toplam hesabında dikkate alınabilecek tutar, girilen işlerin toplamı ile "
-                "en yüksek tek iş deneyim tutarının 3 katından düşük olanıdır."
+                "Aynı inşaat altında eklenen tüm satırlar tek inşaat olarak birlikte değerlendirilir. "
+                "İnşaat hissesi bu satırların toplamına uygulanır. "
+                "5 yıllık toplamda 3 kat sınırı, en yüksek hisse sonrası inşaat deneyimi üzerinden hesaplanır."
             )
 
             pdf_bytes = create_experience_pdf(
@@ -1212,7 +1293,7 @@ elif st.session_state.page == "experience":
                 result_group=capped_group,
                 normal_total=total_experience,
                 normal_group=normal_group,
-                largest_row=largest_row,
+                largest_row=largest_project,
                 three_times_limit=three_times_limit,
                 cap_applied=cap_applied,
             )
@@ -1227,63 +1308,135 @@ elif st.session_state.page == "experience":
                 key="download_exp5_pdf",
             )
         else:
-            st.info("Hesaplama için en az bir inşaatın alanını girin.")
+            st.info("Hesaplama için en az bir inşaatın/blokun alanını girin.")
 
+    # ---------------------------------------------------------
+    # SON 15 YIL - TEK İNŞAAT
+    # ---------------------------------------------------------
     else:
         st.subheader("Son 15 yıldaki tek inşaat")
 
-        col_parcel, col_area, col_class, col_cost = st.columns([1.05, 0.9, 1.55, 1.0])
+        col_parcel, col_share = st.columns([1.7, 0.8])
 
         with col_parcel:
             ada_parsel = st.text_input(
-                "ADA PARSEL",
-                placeholder="Örn: 123 / 45",
+                "ADA PARSEL / BLOK BİLGİSİ",
+                placeholder="Örn: 123 / 45 veya 123 / 45 A Blok",
                 key="exp15_parcel",
             )
 
-        with col_area:
-            area = st.number_input(
-                "İNŞAAT ALANI (m²)",
+        with col_share:
+            share = st.number_input(
+                "İNŞAAT HİSSESİ (%)",
                 min_value=0.0,
-                step=1.0,
-                value=0.0,
-                key="exp15_area",
+                max_value=100.0,
+                value=100.0,
+                step=0.01,
+                format="%.2f",
+                key="exp15_share",
             )
 
-        with col_class:
-            bclass = st.selectbox(
-                "GÜNCEL İNŞAAT SINIFI",
-                list(BUILDING_UNIT_COSTS.keys()),
-                format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
-                index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
-                key="exp15_class",
-            )
+        if "exp15_block_count" not in st.session_state:
+            st.session_state.exp15_block_count = 1
 
-        unit_cost = BUILDING_UNIT_COSTS[bclass]
+        block_count = min(max(int(st.session_state.exp15_block_count), 1), 10)
+        project_gross_amount = 0.0
+        single_rows = []
 
-        with col_cost:
-            st.markdown("**GÜNCEL m² MALİYETİ**")
-            st.markdown(
-                f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
-                f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
-                f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
-                unsafe_allow_html=True,
-            )
+        for j in range(1, block_count + 1):
+            if j == 1:
+                st.markdown("**İNŞAAT BİLGİLERİ**")
+            else:
+                st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
 
-        if area > 0:
-            base_amount = area * unit_cost * 0.85 * 0.90
-            total_experience = base_amount * 2
+            if j == 1:
+                row_ada_parsel = ada_parsel
+            else:
+                row_ada_parsel = st.text_input(
+                    "ADA PARSEL / BLOK BİLGİSİ",
+                    value=ada_parsel,
+                    placeholder="Örn: 123 / 45 A Blok",
+                    key=f"exp15_row_parcel_{j}",
+                )
+
+            col_area, col_class, col_cost = st.columns([0.95, 1.65, 1.0])
+
+            with col_area:
+                area = st.number_input(
+                    "İNŞAAT ALANI (m²)",
+                    min_value=0.0,
+                    step=1.0,
+                    value=0.0,
+                    key=f"exp15_area_{j}",
+                )
+
+            with col_class:
+                bclass = st.selectbox(
+                    "GÜNCEL İNŞAAT SINIFI",
+                    list(BUILDING_UNIT_COSTS.keys()),
+                    format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
+                    index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
+                    key=f"exp15_class_{j}",
+                )
+
+            unit_cost = BUILDING_UNIT_COSTS[bclass]
+
+            with col_cost:
+                st.markdown("**GÜNCEL m² MALİYETİ**")
+                st.markdown(
+                    f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
+                    f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
+                    f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
+                    unsafe_allow_html=True,
+                )
+
+            if area > 0:
+                block_gross = area * unit_cost * 0.85 * 0.90
+                project_gross_amount += block_gross
+
+                single_rows.append({
+                    "row": f"1.{j}",
+                    "ada_parsel": (
+                        f"{row_ada_parsel.strip() or ada_parsel.strip() or '1. İnşaat'} "
+                        f"(%{share:g})"
+                    ),
+                    "area": area,
+                    "class": bclass,
+                    "unit_cost": unit_cost,
+                    "amount": block_gross * (share / 100.0) * 2,
+                })
+
+            if j < block_count:
+                st.markdown("---")
+
+        if block_count < 10:
+            if st.button(
+                "＋ BLOK EKLE",
+                key="add_exp15_block",
+                use_container_width=True,
+            ):
+                st.session_state.exp15_block_count = block_count + 1
+                st.rerun()
+
+        construction_note = st.text_input(
+            "NOT",
+            placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...",
+            key="exp15_note",
+        )
+
+        if project_gross_amount > 0:
+            share_adjusted_amount = project_gross_amount * (share / 100.0)
+            total_experience = share_adjusted_amount * 2
             result_group = work_experience_group(total_experience)
 
-            st.markdown(
-                f"**Hesap:** {fmt_m2(area)} × "
-                f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m² × "
-                f"0,85 × 0,90 × 2"
+            st.info(
+                f"**Hisse sonrası tek iş deneyimi:** {fmt_tl(share_adjusted_amount)} "
+                f"— Hisse: **%{share:g}** — Satır sayısı: **{block_count}**"
             )
 
             st.markdown(f"""
             <div class="result-card">
-                <div><b>İŞ DENEYİM TUTARI</b></div>
+                <div><b>2 KAT DİKKATE ALINAN İŞ DENEYİM TUTARI</b></div>
                 <div class="result-number">{fmt_tl(total_experience)}</div>
                 <div>Asgari iş deneyim tutarına göre</div>
                 <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{result_group} GRUBU</div>
@@ -1301,18 +1454,9 @@ elif st.session_state.page == "experience":
                     "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
                 )
 
-            single_row = [{
-                "row": 1,
-                "ada_parsel": ada_parsel.strip() or "1. İnşaat",
-                "area": area,
-                "class": bclass,
-                "unit_cost": unit_cost,
-                "amount": total_experience,
-            }]
-
             pdf_bytes = create_experience_pdf(
                 method_name="Son 15 yıldaki tek inşaatın 2 kat dikkate alınması",
-                rows=single_row,
+                rows=single_rows,
                 total_amount=total_experience,
                 result_group=result_group,
             )
@@ -1327,7 +1471,7 @@ elif st.session_state.page == "experience":
                 key="download_exp15_pdf",
             )
         else:
-            st.info("Hesaplama için inşaat alanını girin.")
+            st.info("Hesaplama için en az bir blok/inşaat alanını girin.")
 
     with st.expander("2026 asgari iş deneyim tutarlarını göster"):
         table_rows = [
