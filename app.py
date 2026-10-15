@@ -789,6 +789,45 @@ st.markdown("""
         width: 100%;
     }
 
+    /* BLOK EKLE: koyu gri + küçük */
+    [class*="st-key-add_exp5_block_"] div.stButton > button,
+    .st-key-add_exp15_block div.stButton > button {
+        background: #4b4f56 !important;
+        color: #ffffff !important;
+        border: 1px solid #3f4349 !important;
+        width: auto !important;
+        min-height: 2.35rem !important;
+        padding: .35rem .85rem !important;
+        border-radius: 9px !important;
+        font-size: .86rem !important;
+        font-weight: 800 !important;
+        box-shadow: none !important;
+    }
+
+    [class*="st-key-add_exp5_block_"] div.stButton > button:hover,
+    .st-key-add_exp15_block div.stButton > button:hover {
+        background: #3d4147 !important;
+        border-color: #34383d !important;
+        color: #ffffff !important;
+    }
+
+    /* İNŞAAT EKLE: yeşil */
+    .st-key-add_exp5_row div.stButton > button {
+        background: #1f9d55 !important;
+        color: #ffffff !important;
+        border: 1px solid #188447 !important;
+        min-height: 2.8rem !important;
+        border-radius: 11px !important;
+        font-weight: 800 !important;
+        box-shadow: 0 4px 12px rgba(31, 157, 85, .18) !important;
+    }
+
+    .st-key-add_exp5_row div.stButton > button:hover {
+        background: #198447 !important;
+        border-color: #146e3b !important;
+        color: #ffffff !important;
+    }
+
     .brand-footer {
         text-align: center;
         margin-top: 1.2rem;
@@ -1265,7 +1304,7 @@ elif st.session_state.page == "experience":
                 if st.button(
                     "＋ BLOK EKLE",
                     key=f"add_exp5_block_{i}",
-                    use_container_width=True,
+                    use_container_width=False,
                 ):
                     st.session_state[block_count_key] = block_count + 1
                     st.rerun()
@@ -1515,7 +1554,7 @@ elif st.session_state.page == "experience":
             if st.button(
                 "＋ BLOK EKLE",
                 key="add_exp15_block",
-                use_container_width=True,
+                use_container_width=False,
             ):
                 st.session_state.exp15_block_count = block_count + 1
                 st.rerun()
