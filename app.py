@@ -549,6 +549,11 @@ def create_experience_pdf(
     else:
         right_data.append([Paragraph("Dikkate alınan iş deneyim tutarı", center_bold), ""])
 
+    # Hesaplama sonucu ile 2026 asgari iş deneyim tablosu arasına
+    # 3 cm (30 mm) dikey boşluk bırakılır.
+    spacer_row = len(right_data)
+    right_data.append([Spacer(1, 30 * mm), ""])
+
     threshold_title_row = len(right_data)
     right_data.append([
         Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARLARI", center_bold),
@@ -581,7 +586,10 @@ def create_experience_pdf(
         ("FONTNAME", (0, first_threshold_row), (-1, -1), font_regular),
         ("INNERGRID", (0, first_threshold_row), (-1, -1), 0.32, colors.black),
         ("LINEABOVE", (0, threshold_title_row), (-1, threshold_title_row), 0.8, colors.black),
+        ("SPAN", (0, spacer_row), (1, spacer_row)),
         ("SPAN", (0, threshold_title_row), (1, threshold_title_row)),
+        ("TOPPADDING", (0, spacer_row), (-1, spacer_row), 0),
+        ("BOTTOMPADDING", (0, spacer_row), (-1, spacer_row), 0),
         ("TOPPADDING", (0, 0), (-1, threshold_title_row), 1.8),
         ("BOTTOMPADDING", (0, 0), (-1, threshold_title_row), 1.8),
         ("TOPPADDING", (0, first_threshold_row), (-1, -1), 0.55),
