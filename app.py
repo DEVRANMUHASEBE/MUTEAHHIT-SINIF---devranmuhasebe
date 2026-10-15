@@ -430,8 +430,8 @@ def create_experience_pdf(
         ("LEADING", (0, 0), (-1, -1), 9),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
     ]))
     story.append(info_table)
     story.append(Spacer(1, 1.5 * mm))
@@ -483,6 +483,9 @@ def create_experience_pdf(
         story.append(Spacer(1, 1.5 * mm))
 
     # Result section
+    # Ulaşılabilen belge grubu kutusu artık 3 cm'lik boşluğun solunda yer alır.
+    # Sağ tarafta hesaplama sonucu ile asgari iş deneyim tablosu arasında
+    # gerçekten boş (çizgisiz) 30 mm alan bırakılır.
     left_result = Table(
         [[
             Paragraph("ULAŞILABİLEN<br/>BELGE GRUBU", center_bold),
@@ -492,18 +495,16 @@ def create_experience_pdf(
             Paragraph("GRUBU", center_bold),
         ]],
         colWidths=[52 * mm],
+        hAlign="CENTER",
     )
     left_result.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
 
-    # PDF'de gösterilecek hesap sonucu:
-    # 5 yıllık çoklu işte 3 kat kuralı devreye girdiyse normal toplam ayrı,
-    # sınır sonrası dikkate alınan tutar ayrı gösterilir.
     raw_calc_amount = normal_total if (cap_applied and normal_total is not None) else total_amount
     calc_text = fmt_tl(raw_calc_amount).replace(" ₺", " TL")
     capped_text = fmt_tl(total_amount).replace(" ₺", " TL")
@@ -525,103 +526,114 @@ def create_experience_pdf(
         ("H", None),
     ]
 
-    right_data = [
-        [Paragraph("HESAPLAMA SONUCU", center_bold), ""],
-        [Paragraph(calc_text, value_style), ""],
+    # Üst sağ: yalnızca hesaplama sonucu kutusu.
+    calc_data = [
+        [Paragraph("HESAPLAMA SONUCU", center_bold)],
+        [Paragraph(calc_text, value_style)],
     ]
 
-    # Bu iki satır SADECE 3 kat sınırı devreye girdiyse PDF'de görünür.
     if cap_applied:
         source_parcel = str((largest_row or {}).get("ada_parsel", "-"))
         source_amount = (largest_row or {}).get("amount", 0)
         source_text = (
             f"3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR"
             f"<br/><font size='7'>"
-            f"Esas alınan inşaat: {source_parcel} — "
-            f"{fmt_tl(source_amount).replace(' ₺', ' TL')} × 3"
+            f"Esas alınan inşaat: {source_parcel} - "
+            f"{fmt_tl(source_amount).replace(' ₺', ' TL')} x 3"
             f"</font>"
         )
-
-        right_data.extend([
-            [Paragraph(source_text, center_bold), ""],
-            [Paragraph(capped_text, value_style), ""],
+        calc_data.extend([
+            [Paragraph(source_text, center_bold)],
+            [Paragraph(capped_text, value_style)],
         ])
     else:
-        right_data.append([Paragraph("Dikkate alınan iş deneyim tutarı", center_bold), ""])
+        calc_data.append([Paragraph("Dikkate alınan iş deneyim tutarı", center_bold)])
 
-    # Hesaplama sonucu ile 2026 asgari iş deneyim tablosu arasına
-    # 3 cm (30 mm) dikey boşluk bırakılır.
-    spacer_row = len(right_data)
-    right_data.append([Spacer(1, 30 * mm), ""])
+    calc_result = Table(
+        calc_data,
+        colWidths=[122 * mm],
+        hAlign="CENTER",
+    )
 
-    threshold_title_row = len(right_data)
-    right_data.append([
+    calc_style = [
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("FONTNAME", (0, 0), (-1, -1), font_bold),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8),
+    ]
+    if cap_applied:
+        calc_style.append(("LINEABOVE", (0, 2), (-1, 2), 0.55, colors.black))
+    calc_result.setStyle(TableStyle(calc_style))
+
+    # Alt sağ: 2026 asgari iş deneyim tutarları ayrı tablo.
+    threshold_data = [[
         Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARLARI", center_bold),
-        ""
-    ])
+        "",
+    ]]
 
-    first_threshold_row = len(right_data)
     for group_name, min_amount in experience_rows:
         amount_text = (
             "Asgari iş deneyimi aranmaz."
             if min_amount is None
             else fmt_tl(min_amount).replace(",00 ₺", " TL")
         )
-        right_data.append([group_name, amount_text])
+        threshold_data.append([group_name, amount_text])
 
-    right_result = Table(
-        right_data,
+    threshold_result = Table(
+        threshold_data,
         colWidths=[39 * mm, 83 * mm],
         hAlign="CENTER",
     )
 
-    right_style = [
+    threshold_style = [
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
         ("SPAN", (0, 0), (1, 0)),
-        ("SPAN", (0, 1), (1, 1)),
-        ("FONTNAME", (0, 0), (-1, threshold_title_row), font_bold),
+        ("FONTNAME", (0, 0), (-1, 0), font_bold),
+        ("FONTNAME", (0, 1), (-1, -1), font_regular),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("FONTSIZE", (0, first_threshold_row), (-1, -1), 6.15),
-        ("FONTNAME", (0, first_threshold_row), (-1, -1), font_regular),
-        ("INNERGRID", (0, first_threshold_row), (-1, -1), 0.32, colors.black),
-        ("LINEABOVE", (0, threshold_title_row), (-1, threshold_title_row), 0.8, colors.black),
-        ("SPAN", (0, spacer_row), (1, spacer_row)),
-        ("SPAN", (0, threshold_title_row), (1, threshold_title_row)),
-        ("TOPPADDING", (0, spacer_row), (-1, spacer_row), 0),
-        ("BOTTOMPADDING", (0, spacer_row), (-1, spacer_row), 0),
-        ("TOPPADDING", (0, 0), (-1, threshold_title_row), 1.8),
-        ("BOTTOMPADDING", (0, 0), (-1, threshold_title_row), 1.8),
-        ("TOPPADDING", (0, first_threshold_row), (-1, -1), 0.55),
-        ("BOTTOMPADDING", (0, first_threshold_row), (-1, -1), 0.55),
+        ("FONTSIZE", (0, 1), (-1, -1), 6.15),
+        ("INNERGRID", (0, 1), (-1, -1), 0.32, colors.black),
+        ("TOPPADDING", (0, 0), (-1, 0), 1.8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 1.8),
+        ("TOPPADDING", (0, 1), (-1, -1), 0.55),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 0.55),
     ]
 
-    # 3 kat kuralı satırları varsa iki kolonun tamamını kaplasın.
-    if cap_applied:
-        right_style.extend([
-            ("SPAN", (0, 2), (1, 2)),
-            ("SPAN", (0, 3), (1, 3)),
-            ("LINEABOVE", (0, 2), (-1, 2), 0.55, colors.black),
-        ])
-    else:
-        right_style.append(("SPAN", (0, 2), (1, 2)))
-
-    # Hak kazanılan grubu tabloda kalın ve belirgin göster.
-    result_threshold_row = first_threshold_row + [g for g, _ in experience_rows].index(result_group)
-    right_style.extend([
+    result_threshold_row = 1 + [g for g, _ in experience_rows].index(result_group)
+    threshold_style.extend([
         ("FONTNAME", (0, result_threshold_row), (-1, result_threshold_row), font_bold),
         ("LINEABOVE", (0, result_threshold_row), (-1, result_threshold_row), 0.75, colors.black),
         ("LINEBELOW", (0, result_threshold_row), (-1, result_threshold_row), 0.75, colors.black),
     ])
+    threshold_result.setStyle(TableStyle(threshold_style))
 
-    right_result.setStyle(TableStyle(right_style))
-
-    result_table = Table([[left_result, right_result]], colWidths=[55 * mm, 125 * mm], hAlign="LEFT")
+    # Düzen:
+    # 1. satır: sağda hesaplama sonucu
+    # 2. satır: solda belge grubu kutusu, sağda çizgisiz 3 cm boşluk
+    # 3. satır: sağda asgari iş deneyim tablosu
+    result_table = Table(
+        [
+            [Spacer(1, 1), calc_result],
+            [left_result, Spacer(1, 30 * mm)],
+            [Spacer(1, 1), threshold_result],
+        ],
+        colWidths=[55 * mm, 125 * mm],
+        rowHeights=[None, 30 * mm, None],
+        hAlign="LEFT",
+    )
     result_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 1), (0, 1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(result_table)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 1 * mm))
 
     note_box = Table(
         [[Paragraph("<b>Önemli Not:</b> Bu rapor bilgilendirme amaçlıdır. Resmî başvurularda ilgili mevzuat hükümleri ve idare değerlendirmesi esastır.", small_style)]],
@@ -636,7 +648,7 @@ def create_experience_pdf(
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(note_box)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 1 * mm))
     footer_left = Paragraph(
         f"<b>Düzenleme Tarihi</b><br/>{datetime.now().strftime('%d.%m.%Y')}",
         small_style
@@ -651,7 +663,7 @@ def create_experience_pdf(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.black),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.0),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(footer_table)
