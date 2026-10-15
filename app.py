@@ -828,6 +828,33 @@ st.markdown("""
         color: #ffffff !important;
     }
 
+    /* Sonradan eklenen inşaat / blokları kaldırma X butonu */
+    [class*="st-key-remove_exp5_project_"] div.stButton > button,
+    [class*="st-key-remove_exp5_block_"] div.stButton > button,
+    [class*="st-key-remove_exp15_block_"] div.stButton > button {
+        background: #d64545 !important;
+        color: #ffffff !important;
+        border: 1px solid #bd3434 !important;
+        width: 2.15rem !important;
+        min-width: 2.15rem !important;
+        height: 2.15rem !important;
+        min-height: 2.15rem !important;
+        padding: 0 !important;
+        border-radius: 8px !important;
+        font-size: .95rem !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
+        box-shadow: none !important;
+    }
+
+    [class*="st-key-remove_exp5_project_"] div.stButton > button:hover,
+    [class*="st-key-remove_exp5_block_"] div.stButton > button:hover,
+    [class*="st-key-remove_exp15_block_"] div.stButton > button:hover {
+        background: #b93434 !important;
+        border-color: #a42d2d !important;
+        color: #ffffff !important;
+    }
+
     .brand-footer {
         text-align: center;
         margin-top: 1.2rem;
@@ -1155,6 +1182,93 @@ elif st.session_state.page == "joint":
 # 3. BİTİRİLEN İNŞAATLARDAN BELGE SINIFI HESABI
 # ---------------------------------------------------------
 elif st.session_state.page == "experience":
+
+    # -----------------------------------------------------
+    # Dinamik satır kaldırma yardımcıları
+    # -----------------------------------------------------
+    def _copy_state_key(src_key, dst_key):
+        if src_key in st.session_state:
+            st.session_state[dst_key] = st.session_state[src_key]
+        else:
+            st.session_state.pop(dst_key, None)
+
+    def _clear_exp5_block(project_i, block_j):
+        for prefix in ("exp5_row_parcel", "exp5_area", "exp5_class"):
+            st.session_state.pop(f"{prefix}_{project_i}_{block_j}", None)
+
+    def _copy_exp5_block(src_project, src_block, dst_project, dst_block):
+        for prefix in ("exp5_row_parcel", "exp5_area", "exp5_class"):
+            _copy_state_key(
+                f"{prefix}_{src_project}_{src_block}",
+                f"{prefix}_{dst_project}_{dst_block}",
+            )
+
+    def _clear_exp5_project(project_i):
+        for prefix in ("exp5_parcel", "exp5_share", "exp5_note", "exp5_block_count"):
+            st.session_state.pop(f"{prefix}_{project_i}", None)
+
+        for block_j in range(1, 11):
+            _clear_exp5_block(project_i, block_j)
+
+    def _copy_exp5_project(src_i, dst_i):
+        # Önce hedefte kalmış eski verileri temizle.
+        _clear_exp5_project(dst_i)
+
+        for prefix in ("exp5_parcel", "exp5_share", "exp5_note", "exp5_block_count"):
+            _copy_state_key(f"{prefix}_{src_i}", f"{prefix}_{dst_i}")
+
+        for block_j in range(1, 11):
+            _copy_exp5_block(src_i, block_j, dst_i, block_j)
+
+    def _remove_exp5_project(remove_i):
+        visible = int(st.session_state.get("exp5_visible_rows", 1))
+        if remove_i <= 1 or remove_i > visible:
+            return
+
+        # Silinen inşaatın altındakileri bir sıra yukarı taşı.
+        for project_i in range(remove_i, visible):
+            _copy_exp5_project(project_i + 1, project_i)
+
+        _clear_exp5_project(visible)
+        st.session_state.exp5_visible_rows = max(1, visible - 1)
+
+    def _remove_exp5_block(project_i, remove_j):
+        count_key = f"exp5_block_count_{project_i}"
+        count = int(st.session_state.get(count_key, 1))
+
+        if remove_j <= 1 or remove_j > count:
+            return
+
+        # Silinen bloğun altındaki blokları yukarı kaydır.
+        for block_j in range(remove_j, count):
+            _copy_exp5_block(project_i, block_j + 1, project_i, block_j)
+
+        _clear_exp5_block(project_i, count)
+        st.session_state[count_key] = max(1, count - 1)
+
+    def _clear_exp15_block(block_j):
+        for prefix in ("exp15_row_parcel", "exp15_area", "exp15_class"):
+            st.session_state.pop(f"{prefix}_{block_j}", None)
+
+    def _copy_exp15_block(src_block, dst_block):
+        for prefix in ("exp15_row_parcel", "exp15_area", "exp15_class"):
+            _copy_state_key(
+                f"{prefix}_{src_block}",
+                f"{prefix}_{dst_block}",
+            )
+
+    def _remove_exp15_block(remove_j):
+        count = int(st.session_state.get("exp15_block_count", 1))
+
+        if remove_j <= 1 or remove_j > count:
+            return
+
+        for block_j in range(remove_j, count):
+            _copy_exp15_block(block_j + 1, block_j)
+
+        _clear_exp15_block(count)
+        st.session_state.exp15_block_count = max(1, count - 1)
+
     if st.button("← Ana Sayfa", key="exp_home"):
         go("home")
 
@@ -1194,7 +1308,20 @@ elif st.session_state.page == "experience":
         visible_rows = min(max(int(st.session_state.exp5_visible_rows), 1), 10)
 
         for i in range(1, visible_rows + 1):
-            st.markdown(f"### {i}. İNŞAAT")
+            title_col, remove_col = st.columns([8.8, 0.7])
+
+            with title_col:
+                st.markdown(f"### {i}. İNŞAAT")
+
+            with remove_col:
+                if i > 1:
+                    st.button(
+                        "✕",
+                        key=f"remove_exp5_project_{i}",
+                        help=f"{i}. inşaatı kaldır",
+                        on_click=_remove_exp5_project,
+                        args=(i,),
+                    )
 
             # İnşaat üst bilgileri: ada/parsel + hisse
             col_parcel, col_share = st.columns([1.7, 0.8])
@@ -1234,7 +1361,17 @@ elif st.session_state.page == "experience":
                 if j == 1:
                     st.markdown("**İNŞAAT BİLGİLERİ**")
                 else:
-                    st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
+                    block_title_col, block_remove_col = st.columns([8.8, 0.7])
+                    with block_title_col:
+                        st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
+                    with block_remove_col:
+                        st.button(
+                            "✕",
+                            key=f"remove_exp5_block_{i}_{j}",
+                            help="Bu bloğu/bölümü kaldır",
+                            on_click=_remove_exp5_block,
+                            args=(i, j),
+                        )
 
                 if j == 1:
                     row_ada_parsel = ada_parsel
@@ -1488,7 +1625,17 @@ elif st.session_state.page == "experience":
             if j == 1:
                 st.markdown("**İNŞAAT BİLGİLERİ**")
             else:
-                st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
+                block_title_col, block_remove_col = st.columns([8.8, 0.7])
+                with block_title_col:
+                    st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
+                with block_remove_col:
+                    st.button(
+                        "✕",
+                        key=f"remove_exp15_block_{j}",
+                        help="Bu bloğu/bölümü kaldır",
+                        on_click=_remove_exp15_block,
+                        args=(j,),
+                    )
 
             if j == 1:
                 row_ada_parsel = ada_parsel
