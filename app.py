@@ -392,7 +392,14 @@ def create_experience_pdf(
 
     # Data table
     story.append(Paragraph("İNŞAAT BİLGİLERİ", section_style))
-    data = [["Sıra", "Ada Parsel", "İnşaat Alanı (m²)", "Yapı Sınıfı", "m² Maliyeti (TL)"]]
+    data = [[
+        "Sıra",
+        "Ada Parsel",
+        "İnşaat Alanı (m²)",
+        "Yapı Sınıfı",
+        "m² Maliyeti (TL)",
+        "Toplam İş Deneyimi",
+    ]]
     max_rows = max(len(rows), 1)
     for idx in range(max_rows):
         if idx < len(rows):
@@ -403,13 +410,14 @@ def create_experience_pdf(
                 f"{row.get('area', 0):,.0f}".replace(",", "."),
                 str(row.get("class", "")),
                 f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
+                fmt_tl(row.get("project_total", row.get("amount", 0))).replace(" ₺", " TL"),
             ])
         else:
-            data.append([str(idx + 1), "", "", "", ""])
+            data.append([str(idx + 1), "", "", "", "", ""])
 
     info_table = Table(
         data,
-        colWidths=[18 * mm, 33 * mm, 41 * mm, 31 * mm, 36 * mm],
+        colWidths=[13 * mm, 30 * mm, 30 * mm, 23 * mm, 29 * mm, 48 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -418,7 +426,7 @@ def create_experience_pdf(
         ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), font_bold),
         ("FONTNAME", (0, 1), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.9),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.8),
         ("LEADING", (0, 0), (-1, -1), 9),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -524,8 +532,18 @@ def create_experience_pdf(
 
     # Bu iki satır SADECE 3 kat sınırı devreye girdiyse PDF'de görünür.
     if cap_applied:
+        source_parcel = str((largest_row or {}).get("ada_parsel", "-"))
+        source_amount = (largest_row or {}).get("amount", 0)
+        source_text = (
+            f"3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR"
+            f"<br/><font size='7'>"
+            f"Esas alınan inşaat: {source_parcel} — "
+            f"{fmt_tl(source_amount).replace(' ₺', ' TL')} × 3"
+            f"</font>"
+        )
+
         right_data.extend([
-            [Paragraph("3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR", center_bold), ""],
+            [Paragraph(source_text, center_bold), ""],
             [Paragraph(capped_text, value_style), ""],
         ])
     else:
@@ -1208,6 +1226,7 @@ elif st.session_state.page == "experience":
                     # PDF'de aynı ada/parsel + hisse görünür; blok sıra bilgisinde ayırt edilir.
                     row_results.append({
                         "row": f"{i}.{j}",
+                        "project_id": i,
                         "ada_parsel": (
                             f"{row_ada_parsel.strip() or ada_parsel.strip() or f'{i}. İnşaat'} "
                             f"(%{share:g})"
@@ -1253,6 +1272,12 @@ elif st.session_state.page == "experience":
                     "gross_amount": project_gross_amount,
                     "block_count": block_count,
                 })
+
+                # Aynı inşaata ait tüm blok/satırlarda, inşaatın hisse sonrası
+                # toplam iş deneyimi PDF'de en sağ sütunda gösterilir.
+                for pdf_row in row_results:
+                    if pdf_row.get("project_id") == i:
+                        pdf_row["project_total"] = project_amount
 
                 st.info(
                     f"**{i}. inşaat dikkate alınan iş deneyimi:** {fmt_tl(project_amount)} "
@@ -1485,6 +1510,11 @@ elif st.session_state.page == "experience":
             share_adjusted_amount = project_gross_amount * (share / 100.0)
             total_experience = share_adjusted_amount * 2
             result_group = work_experience_group(total_experience)
+
+            # Son 15 yıl yönteminde her satırın sonunda, 2 kat dikkate alınan
+            # tek inşaatın toplam iş deneyimi gösterilir.
+            for pdf_row in single_rows:
+                pdf_row["project_total"] = total_experience
 
             st.info(
                 f"**Hisse sonrası tek iş deneyimi:** {fmt_tl(share_adjusted_amount)} "
