@@ -332,6 +332,24 @@ def create_experience_pdf(
         alignment=TA_CENTER,
         textColor=colors.black,
     )
+    table_ada_style = ParagraphStyle(
+        "PDFTableAda",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=6.35,
+        leading=7.2,
+        alignment=TA_LEFT,
+        textColor=colors.black,
+    )
+    table_total_style = ParagraphStyle(
+        "PDFTableTotal",
+        parent=styles["Normal"],
+        fontName=font_bold,
+        fontSize=6.35,
+        leading=7.2,
+        alignment=TA_LEFT,
+        textColor=colors.black,
+    )
 
     report_no = f"MH-{datetime.now().strftime('%Y%m%d-%H%M')}"
     result_min_amount = WORK_EXPERIENCE_MIN.get(result_group)
@@ -398,41 +416,95 @@ def create_experience_pdf(
         "İnşaat Alanı (m²)",
         "Yapı Sınıfı",
         "m² Maliyeti (TL)",
-        "Toplam İş Deneyimi",
+        "Blok İş Deneyimi",
     ]]
     max_rows = max(len(rows), 1)
-    for idx in range(max_rows):
-        if idx < len(rows):
-            row = rows[idx]
+    summary_row_indexes = []
+
+    if rows:
+        for idx, row in enumerate(rows):
             data.append([
                 str(row.get("row", idx + 1)),
-                str(row.get("ada_parsel", "")),
+                Paragraph(str(row.get("ada_parsel", "")), table_ada_style),
                 f"{row.get('area', 0):,.0f}".replace(",", "."),
                 str(row.get("class", "")),
                 f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
-                fmt_tl(row.get("project_total", row.get("amount", 0))).replace(" ₺", " TL"),
+                fmt_tl(row.get("amount", 0)).replace(" ₺", " TL"),
             ])
-        else:
-            data.append([str(idx + 1), "", "", "", "", ""])
+
+            current_project = row.get("project_id")
+            next_project = (
+                rows[idx + 1].get("project_id")
+                if idx + 1 < len(rows)
+                else None
+            )
+
+            # Aynı inşaatın son blok/bölüm satırından sonra PARSEL TOPLAMI ekle.
+            if current_project is not None and current_project != next_project:
+                project_rows = [
+                    r for r in rows
+                    if r.get("project_id") == current_project
+                ]
+                project_label = (
+                    row.get("project_label")
+                    or project_rows[0].get("project_label")
+                    or f"{current_project}. İnşaat"
+                )
+                project_area_total = sum(float(r.get("area", 0) or 0) for r in project_rows)
+                project_experience_total = row.get(
+                    "project_total",
+                    sum(float(r.get("amount", 0) or 0) for r in project_rows),
+                )
+                part_count = len(project_rows)
+
+                data.append([
+                    f"{current_project}.T",
+                    Paragraph(
+                        f"<b>{project_label} PARSEL TOPLAMI ({part_count} BLOK/BÖLÜM)</b>",
+                        table_total_style,
+                    ),
+                    f"{project_area_total:,.0f}".replace(",", "."),
+                    "",
+                    "",
+                    fmt_tl(project_experience_total).replace(" ₺", " TL"),
+                ])
+                summary_row_indexes.append(len(data) - 1)
+    else:
+        data.append(["1", "", "", "", "", ""])
 
     info_table = Table(
         data,
-        colWidths=[13 * mm, 30 * mm, 30 * mm, 23 * mm, 29 * mm, 48 * mm],
+        colWidths=[11 * mm, 42 * mm, 28 * mm, 20 * mm, 24 * mm, 48 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
-    info_table.setStyle(TableStyle([
+
+    info_style = [
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
         ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), font_bold),
         ("FONTNAME", (0, 1), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 6.8),
-        ("LEADING", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.65),
+        ("LEADING", (0, 0), (-1, -1), 8.2),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-    ]))
+        ("TOPPADDING", (0, 0), (-1, -1), 1.25),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.25),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2.3),
+    ]
+
+    for summary_row in summary_row_indexes:
+        info_style.extend([
+            ("FONTNAME", (0, summary_row), (-1, summary_row), font_bold),
+            ("LINEABOVE", (0, summary_row), (-1, summary_row), 0.9, colors.black),
+            ("LINEBELOW", (0, summary_row), (-1, summary_row), 0.9, colors.black),
+            ("TOPPADDING", (0, summary_row), (-1, summary_row), 1.6),
+            ("BOTTOMPADDING", (0, summary_row), (-1, summary_row), 1.6),
+        ])
+
+    info_table.setStyle(TableStyle(info_style))
     story.append(info_table)
     story.append(Spacer(1, 1.5 * mm))
 
@@ -1423,6 +1495,7 @@ elif st.session_state.page == "experience":
                     row_results.append({
                         "row": f"{i}.{j}",
                         "project_id": i,
+                        "project_label": ada_parsel.strip() or f"{i}. İnşaat",
                         "ada_parsel": (
                             f"{row_ada_parsel.strip() or ada_parsel.strip() or f'{i}. İnşaat'} "
                             f"(%{share:g})"
@@ -1684,6 +1757,8 @@ elif st.session_state.page == "experience":
 
                 single_rows.append({
                     "row": f"1.{j}",
+                    "project_id": 1,
+                    "project_label": ada_parsel.strip() or "1. İnşaat",
                     "ada_parsel": (
                         f"{row_ada_parsel.strip() or ada_parsel.strip() or '1. İnşaat'} "
                         f"(%{share:g})"
