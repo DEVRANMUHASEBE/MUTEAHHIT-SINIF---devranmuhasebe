@@ -686,10 +686,10 @@ def create_experience_pdf(
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("FONTSIZE", (0, 1), (-1, -1), 6.15),
         ("INNERGRID", (0, 1), (-1, -1), 0.32, colors.black),
-        ("TOPPADDING", (0, 0), (-1, 0), 1.8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 1.8),
-        ("TOPPADDING", (0, 1), (-1, -1), 0.55),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 0.55),
+        ("TOPPADDING", (0, 0), (-1, 0), 1.1),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 1.1),
+        ("TOPPADDING", (0, 1), (-1, -1), 0.20),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 0.20),
     ]
 
     result_threshold_row = 1 + [g for g, _ in experience_rows].index(result_group)
@@ -700,21 +700,21 @@ def create_experience_pdf(
     ])
     threshold_result.setStyle(TableStyle(threshold_style))
 
-    # Düzen:
-    # 1. satır: sağda hesaplama sonucu
-    # 2. satır: solda belge grubu kutusu, sağda çizgisiz 3 cm boşluk
-    # 3. satır: sağda asgari iş deneyim tablosu
-    result_table = Table(
+    # Düzen iki bağımsız akış bloğuna ayrılır.
+    # Böylece asgari iş deneyim tablosu, sayfada yer varsa 1. sayfada kalır;
+    # gerçekten sığmıyorsa ancak o zaman sonraki sayfaya geçer.
+    #
+    # 1) Hesaplama sonucu + altında 3 cm boşluk içinde belge grubu
+    result_top_table = Table(
         [
             [Spacer(1, 1), calc_result],
             [left_result, Spacer(1, 30 * mm)],
-            [Spacer(1, 1), threshold_result],
         ],
         colWidths=[55 * mm, 125 * mm],
-        rowHeights=[None, 30 * mm, None],
+        rowHeights=[None, 30 * mm],
         hAlign="LEFT",
     )
-    result_table.setStyle(TableStyle([
+    result_top_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("VALIGN", (0, 1), (0, 1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -722,7 +722,24 @@ def create_experience_pdf(
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(result_table)
+    story.append(result_top_table)
+
+    # 2) 2026 asgari iş deneyim tablosu ayrı flowable.
+    # Sağ kolonda başlar; önceki büyük tabloya bağlı olmadığı için
+    # mevcut sayfada yeterli alan varsa aynı sayfaya yerleşir.
+    threshold_wrapper = Table(
+        [[Spacer(1, 1), threshold_result]],
+        colWidths=[55 * mm, 125 * mm],
+        hAlign="LEFT",
+    )
+    threshold_wrapper.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(threshold_wrapper)
     story.append(Spacer(1, 1 * mm))
 
     note_box = Table(
@@ -732,8 +749,8 @@ def create_experience_pdf(
     )
     note_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
@@ -1068,7 +1085,7 @@ if st.session_state.page == "home":
 
     st.markdown(
         """
-        <a class="click-card visual-card" href="?page=m2">
+        <a class="click-card visual-card" href="?page=m2" target="_self">
             <div class="visual-card-row">
                 <div class="visual-icon">㎡</div>
                 <div class="visual-text">
@@ -1084,7 +1101,7 @@ if st.session_state.page == "home":
 
     st.markdown(
         """
-        <a class="click-card visual-card" href="?page=joint">
+        <a class="click-card visual-card" href="?page=joint" target="_self">
             <div class="visual-card-row">
                 <div class="visual-icon">👥</div>
                 <div class="visual-text">
@@ -1100,7 +1117,7 @@ if st.session_state.page == "home":
 
     st.markdown(
         """
-        <a class="click-card visual-card" href="?page=experience">
+        <a class="click-card visual-card" href="?page=experience" target="_self">
             <div class="visual-card-row">
                 <div class="visual-icon">📋</div>
                 <div class="visual-text">
