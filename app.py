@@ -420,6 +420,7 @@ def create_experience_pdf(
     ]]
     max_rows = max(len(rows), 1)
     summary_row_indexes = []
+    project_row_indexes = {}
 
     if rows:
         for idx, row in enumerate(rows):
@@ -433,6 +434,10 @@ def create_experience_pdf(
             ])
 
             current_project = row.get("project_id")
+
+            if current_project is not None:
+                project_row_indexes.setdefault(current_project, []).append(len(data) - 1)
+
             next_project = (
                 rows[idx + 1].get("project_id")
                 if idx + 1 < len(rows)
@@ -469,6 +474,7 @@ def create_experience_pdf(
                     fmt_tl(project_experience_total).replace(" ₺", " TL"),
                 ])
                 summary_row_indexes.append(len(data) - 1)
+                project_row_indexes.setdefault(current_project, []).append(len(data) - 1)
     else:
         data.append(["1", "", "", "", "", ""])
 
@@ -494,6 +500,18 @@ def create_experience_pdf(
         ("LEFTPADDING", (0, 0), (-1, -1), 2.3),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2.3),
     ]
+
+    # İnşaat gruplarını görsel olarak ayır:
+    # 1., 3., 5. ... inşaat açık mavi; 2., 4., 6. ... inşaat beyaz.
+    light_blue = colors.HexColor("#EAF4FF")
+    white_bg = colors.white
+
+    for project_id, row_indexes in project_row_indexes.items():
+        bg_color = light_blue if int(project_id) % 2 == 1 else white_bg
+        for table_row in row_indexes:
+            info_style.append(
+                ("BACKGROUND", (0, table_row), (-1, table_row), bg_color)
+            )
 
     for summary_row in summary_row_indexes:
         info_style.extend([
