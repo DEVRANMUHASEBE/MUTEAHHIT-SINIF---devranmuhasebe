@@ -124,6 +124,14 @@ def best_joint_group(pilot_group, other_group):
             return target, pilot_min, other_min
     return "H", "H", "H"
 
+def fmt_pdf_m2(value):
+    """PDF'de m² değerini 2 ondalık ve Türkçe sayı biçimiyle gösterir."""
+    try:
+        return f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (TypeError, ValueError):
+        return "0,00"
+
+
 def fmt_m2(value):
     return f"{value:,.0f}".replace(",", ".") + " m²"
 
@@ -427,7 +435,7 @@ def create_experience_pdf(
             data.append([
                 str(row.get("row", idx + 1)),
                 Paragraph(str(row.get("ada_parsel", "")), table_ada_style),
-                f"{row.get('area', 0):,.0f}".replace(",", "."),
+                fmt_pdf_m2(row.get("area", 0)),
                 str(row.get("class", "")),
                 f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
                 fmt_tl(row.get("amount", 0)).replace(" ₺", " TL"),
@@ -468,7 +476,7 @@ def create_experience_pdf(
                         f"<b>{project_label} PARSEL TOPLAMI ({part_count} BLOK/BÖLÜM)</b>",
                         table_total_style,
                     ),
-                    f"{project_area_total:,.0f}".replace(",", "."),
+                    fmt_pdf_m2(project_area_total),
                     "",
                     "",
                     fmt_tl(project_experience_total).replace(" ₺", " TL"),
