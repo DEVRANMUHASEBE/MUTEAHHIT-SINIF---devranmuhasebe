@@ -1,6 +1,9 @@
 import streamlit as st
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, date, timedelta
+import os
+import re
+import requests
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -54,6 +57,252 @@ BUILDING_UNIT_COSTS = {
     "IV-C": 40500,
     "V-A": 42350,
 }
+
+
+# ---------------------------------------------------------
+# SÖZLEŞME TARİHİNE GÖRE İŞ DENEYİMİ GÜNCELLEME
+# ---------------------------------------------------------
+# Yİ-ÜFE aylık endeksleri için yerleşik güvenli kopya.
+# Canlı TCMB EVDS bağlantısı varsa bu değerlerin üstüne yeni yayımlanan aylar eklenir.
+# Seri: TP.TUFE1YI.T1 (Yurt İçi Üretici Fiyat Endeksi, 2003=100)
+_YI_UFE_YEARLY = {
+    2011: [182.75,185.90,188.17,189.32,189.61,189.62,189.57,192.91,195.89,199.03,200.32,202.33],
+    2012: [203.10,202.91,203.64,203.81,204.89,201.83,201.20,201.71,203.79,204.15,207.54,207.29],
+    2013: [206.91,206.65,208.33,207.27,209.34,212.39,214.50,214.59,216.48,217.97,219.31,221.74],
+    2014: [229.10,232.27,233.98,234.18,232.96,233.09,234.79,235.78,237.79,239.97,237.65,235.84],
+    2015: [236.61,239.46,241.97,245.42,248.15,248.78,247.99,250.43,254.25,253.74,250.13,249.31],
+    2016: [250.67,250.16,251.17,252.47,256.21,257.27,257.81,258.01,258.77,260.94,266.16,274.09],
+    2017: [284.99,288.59,291.58,293.79,295.31,295.52,297.65,300.18,300.90,306.04,312.21,316.48],
+    2018: [319.60,328.17,333.21,341.88,354.85,365.60,372.06,396.62,439.78,443.78,432.55,422.94],
+    2019: [424.86,425.26,431.98,444.85,456.74,457.16,452.63,449.96,450.55,451.31,450.97,454.08],
+    2020: [462.42,464.64,468.69,474.69,482.02,485.37,490.33,501.85,515.13,533.44,555.18,568.27],
+    2021: [583.38,590.52,614.93,641.63,666.79,693.54,710.61,730.28,741.58,780.45,858.43,1022.25],
+    2022: [1129.03,1210.60,1321.90,1423.27,1548.01,1652.75,1738.21,1780.05,1865.09,2011.13,2026.08,2021.19],
+    2023: [2105.17,2138.04,2147.44,2164.94,2179.02,2320.72,2511.75,2659.60,2749.98,2803.29,2882.04,2915.02],
+    2024: [3035.59,3149.03,3252.79,3369.98,3435.96,3483.25,3550.88,3610.51,3659.84,3707.10,3731.43,3746.52],
+    2025: [3861.33,3943.01,4017.30,4128.19,4230.69,4334.94,4409.73,4518.89,4632.89,4708.20,4747.63,4783.04],
+    2026: [4910.53,5029.76,5145.36,5308.46,5454.58,5552.52,5637.14,5781.74,5901.26,5998.51],
+}
+YI_UFE_FALLBACK = {
+    f"{year}-{month:02d}": value
+    for year, values in _YI_UFE_YEARLY.items()
+    for month, value in enumerate(values, start=1)
+}
+
+# Sözleşme dönemindeki yapı yaklaşık birim maliyetleri.
+# 2025-2026 yeni sınıflandırma; önceki yıllarda eşdeğer yapı grupları kullanılır.
+CONTRACT_COST_2026 = BUILDING_UNIT_COSTS.copy()
+CONTRACT_COST_2025 = {
+    "II-B": 10200, "II-C": 12400, "III-A": 17100, "III-B": 18200,
+    "III-C": 19150, "IV-A": 21500, "IV-B": 27500, "IV-C": 32600, "V-A": 34400,
+}
+CONTRACT_COST_2024 = {
+    "II-B": 5250, "II-C": 7750, "III-A": 12250, "III-B": 14400,
+    "III-C": 15300, "IV-A": 18700, "IV-B": 21300,
+}
+CONTRACT_COST_2023_1 = {
+    "II-B": 3200, "II-C": 3575, "III-A": 4600, "III-B": 6350,
+    "III-C": 6825, "IV-A": 8825, "IV-B": 10650, "V-A": 10650,
+}
+CONTRACT_COST_2023_2 = {
+    "II-B": 3800, "II-C": 5350, "III-A": 7500, "III-B": 9000,
+    "III-C": 10200, "IV-A": 12450, "IV-B": 13800, "V-A": 13800,
+}
+CONTRACT_COST_2022_1 = {
+    "II-B": 1550, "II-C": 1700, "III-A": 2250, "III-B": 3000,
+    "III-C": 3200, "IV-A": 4100, "IV-B": 4950, "V-A": 4950,
+}
+# 02.06.2022-30.06.2022 ara döneminde güvenle teyit edilen III-B tutarı.
+CONTRACT_COST_2022_2 = {"III-B": 4275}
+CONTRACT_COST_2022_3 = {
+    "II-B": 2400, "III-A": 3450, "III-B": 4650,
+    "III-C": 4950, "IV-A": 6400, "IV-B": 7700, "V-A": 7700,
+}
+CONTRACT_COST_2021 = {
+    "II-B": 940, "II-C": 1030, "III-A": 1360, "III-B": 1800,
+    "III-C": 1920, "IV-A": 2480, "IV-B": 2970, "V-A": 2970,
+}
+
+MONTH_NAMES_TR = {
+    1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",
+    7:"Temmuz",8:"Ağustos",9:"Eylül",10:"Ekim",11:"Kasım",12:"Aralık",
+}
+
+def previous_month(d):
+    first = date(d.year, d.month, 1)
+    return first - timedelta(days=1)
+
+def month_key(d):
+    return f"{d.year}-{d.month:02d}"
+
+def month_label(d):
+    return f"{MONTH_NAMES_TR[d.month]} {d.year}"
+
+def _get_evds_api_key():
+    try:
+        key = str(st.secrets.get("EVDS_API_KEY", "")).strip()
+        if key:
+            return key
+    except Exception:
+        pass
+    return os.environ.get("EVDS_API_KEY", "").strip()
+
+def _parse_evds_month(text):
+    text = str(text or "").strip()
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%Y-%m", "%m-%Y", "%Y/%m", "%m/%Y"):
+        try:
+            d = datetime.strptime(text, fmt).date()
+            return f"{d.year}-{d.month:02d}"
+        except ValueError:
+            pass
+    m = re.search(r"(20\d{2}|19\d{2})\D+(\d{1,2})", text)
+    if m:
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}"
+    return None
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def fetch_live_yiufe(api_key):
+    """TCMB EVDS'den aylık Yİ-ÜFE serisini çeker. Hata olursa boş sözlük döndürür."""
+    if not api_key:
+        return {}
+    end_date = date.today().strftime("%d-%m-%Y")
+    path = (
+        "series=TP.TUFE1YI.T1&startDate=01-01-2011&"
+        f"endDate={end_date}&type=json"
+    )
+    endpoints = [
+        f"https://evds2.tcmb.gov.tr/service/evds/{path}",
+        f"https://evds3.tcmb.gov.tr/igmevdsms-dis/{path}",
+    ]
+    headers = {"key": api_key}
+    for url in endpoints:
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+            items = payload.get("items", []) if isinstance(payload, dict) else payload
+            if not isinstance(items, list):
+                continue
+            parsed = {}
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                key = _parse_evds_month(item.get("Tarih") or item.get("DATE") or item.get("Date"))
+                if not key:
+                    continue
+                raw = None
+                for field, value in item.items():
+                    if "TUFE1YI" in str(field).upper():
+                        raw = value
+                        break
+                if raw in (None, "", "null", "-"):
+                    continue
+                try:
+                    value = float(str(raw).replace(".", "").replace(",", ".")) if "," in str(raw) else float(raw)
+                except (TypeError, ValueError):
+                    continue
+                parsed[key] = value
+            if parsed:
+                return parsed
+        except Exception:
+            continue
+    return {}
+
+def get_yiufe_series():
+    series = dict(YI_UFE_FALLBACK)
+    api_key = _get_evds_api_key()
+    live = fetch_live_yiufe(api_key) if api_key else {}
+    series.update(live)
+    return series, live, bool(api_key)
+
+def get_yiufe_index(d, series, live):
+    key = month_key(d)
+    value = series.get(key)
+    source = "TCMB EVDS" if key in live else "Yerleşik veri"
+    return value, source
+
+def historical_contract_cost(contract_date, building_class):
+    """Sözleşme tarihinde geçerli/eşdeğer m² maliyetini ve dönem etiketini döndürür."""
+    y = contract_date.year
+    if y >= 2026:
+        return CONTRACT_COST_2026.get(building_class), "2026"
+    if y == 2025:
+        return CONTRACT_COST_2025.get(building_class), "2025"
+    if y == 2024:
+        return CONTRACT_COST_2024.get(building_class), "2024 (eşdeğer yapı grubu)"
+    if y == 2023:
+        if contract_date < date(2023, 7, 1):
+            return CONTRACT_COST_2023_1.get(building_class), "2023/1"
+        return CONTRACT_COST_2023_2.get(building_class), "2023/2 (01.07.2023 sonrası)"
+    if y == 2022:
+        if contract_date < date(2022, 2, 18):
+            return CONTRACT_COST_2021.get(building_class), "2021 tarifesi (18.02.2022 öncesi)"
+        if contract_date < date(2022, 6, 2):
+            return CONTRACT_COST_2022_1.get(building_class), "2022/1"
+        if contract_date < date(2022, 7, 1):
+            return CONTRACT_COST_2022_2.get(building_class), "2022/2 ara dönem"
+        return CONTRACT_COST_2022_3.get(building_class), "2022/3 (01.07.2022 sonrası)"
+    if y == 2021:
+        return CONTRACT_COST_2021.get(building_class), "2021"
+    return None, "Otomatik tarihsel m² maliyeti bulunamadı"
+
+def synced_contract_cost_input(key_prefix, auto_cost, token):
+    """Tarih/sınıf değişirse otomatik maliyeti yeniler; kullanıcı isterse değeri elle değiştirebilir."""
+    value_key = f"{key_prefix}_value"
+    token_key = f"{key_prefix}_token"
+    if st.session_state.get(token_key) != token:
+        st.session_state[token_key] = token
+        st.session_state[value_key] = float(auto_cost or 0.0)
+    return st.number_input(
+        "SÖZLEŞME TARİHİ m² MALİYETİ",
+        min_value=0.0,
+        step=50.0,
+        format="%.2f",
+        key=value_key,
+        help="Otomatik gelen tutarı gerekiyorsa elle değiştirebilirsiniz.",
+    )
+
+def date_based_block_calculation(area, current_cost, contract_cost, contract_date, application_date, yiufe_series, yiufe_live):
+    """%90-%130 sınırları içinde sözleşme tarihine göre güncellenmiş blok iş deneyimini hesaplar."""
+    if not area or area <= 0 or not contract_cost or contract_cost <= 0:
+        return None
+    base_month = previous_month(contract_date)
+    target_month = previous_month(application_date)
+    base_index, base_source = get_yiufe_index(base_month, yiufe_series, yiufe_live)
+    target_index, target_source = get_yiufe_index(target_month, yiufe_series, yiufe_live)
+    if not base_index or not target_index:
+        return None
+
+    yiufe_coeff = target_index / base_index
+    cost_ratio = current_cost / contract_cost
+    lower_coeff = cost_ratio * 0.90
+    upper_coeff = cost_ratio * 1.30
+    applied_coeff = max(lower_coeff, min(yiufe_coeff, upper_coeff))
+
+    if yiufe_coeff < lower_coeff:
+        reason = "%90 alt sınır uygulandı"
+    elif yiufe_coeff > upper_coeff:
+        reason = "%130 üst sınır uygulandı"
+    else:
+        reason = "Yİ-ÜFE katsayısı uygulandı"
+
+    contract_base = area * contract_cost * 0.85
+    amount = contract_base * applied_coeff
+    return {
+        "amount": amount,
+        "yiufe_coeff": yiufe_coeff,
+        "cost_ratio": cost_ratio,
+        "lower_coeff": lower_coeff,
+        "upper_coeff": upper_coeff,
+        "applied_coeff": applied_coeff,
+        "reason": reason,
+        "base_month": base_month,
+        "target_month": target_month,
+        "base_index": base_index,
+        "target_index": target_index,
+        "base_source": base_source,
+        "target_source": target_source,
+    }
 
 # 2026 yılı asgari iş deneyim tutarları (TL)
 # H grubu için asgari iş deneyim tutarı şartı bulunmadığından fallback olarak kullanılır.
@@ -255,6 +504,13 @@ def create_experience_pdf(
     largest_row_no90=None,
     three_times_limit_no90=None,
     cap_applied_no90=False,
+    total_amount_auto=None,
+    result_group_auto=None,
+    normal_total_auto=None,
+    normal_group_auto=None,
+    largest_row_auto=None,
+    three_times_limit_auto=None,
+    cap_applied_auto=False,
 ):
     """Sade PDF dökümü oluşturur: detaylı hesaplama yok, sadece özet tablo ve sonuç."""
     buffer = BytesIO()
@@ -402,7 +658,7 @@ def create_experience_pdf(
     method_table = Table(
         [
             ["Yöntem", method_name],
-            ["Hesap", "İş deneyimi hem %90 uygulanarak hem de %90 uygulanmadan ayrı ayrı gösterilmiştir."],
+            ["Hesap", Paragraph("Üç sonuç birlikte gösterilir: %90 alt sınır, %90'sız referans ve sözleşme tarihine göre.", small_style)],
             ["Not", "Toplam tutar, en büyük iş deneyiminin 3 katını geçemez (Yönetmelik)."],
         ],
         colWidths=[30 * mm, 147 * mm],
@@ -430,10 +686,11 @@ def create_experience_pdf(
         "Sıra",
         "Ada Parsel",
         "İnşaat Alanı (m²)",
-        "Yapı Sınıfı",
+        "Yapı",
         "m² Maliyeti",
-        "İş Deneyimi\n(%90 Uyg.)",
+        "İş Deneyimi\n(%90)",
         "İş Deneyimi\n(%90 Yok)",
+        "Sözleşmeye\nGöre",
     ]]
     max_rows = max(len(rows), 1)
     summary_row_indexes = []
@@ -449,6 +706,7 @@ def create_experience_pdf(
                 f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
                 fmt_tl(row.get("amount_90", row.get("amount", 0))).replace(" ₺", " TL"),
                 fmt_tl(row.get("amount_no90", row.get("amount", 0))).replace(" ₺", " TL"),
+                (fmt_tl(row.get("amount_auto")).replace(" ₺", " TL") if row.get("amount_auto") is not None else "-"),
             ])
 
             current_project = row.get("project_id")
@@ -482,6 +740,10 @@ def create_experience_pdf(
                     "project_total_no90",
                     sum(float(r.get("amount_no90", r.get("amount", 0)) or 0) for r in project_rows),
                 )
+                auto_values = [r.get("amount_auto") for r in project_rows]
+                project_experience_total_auto = row.get("project_total_auto")
+                if project_experience_total_auto is None and all(v is not None for v in auto_values):
+                    project_experience_total_auto = sum(float(v or 0) for v in auto_values)
                 part_count = len(project_rows)
 
                 data.append([
@@ -495,15 +757,16 @@ def create_experience_pdf(
                     "",
                     fmt_tl(project_experience_total_90).replace(" ₺", " TL"),
                     fmt_tl(project_experience_total_no90).replace(" ₺", " TL"),
+                    (fmt_tl(project_experience_total_auto).replace(" ₺", " TL") if project_experience_total_auto is not None else "-"),
                 ])
                 summary_row_indexes.append(len(data) - 1)
                 project_row_indexes.setdefault(current_project, []).append(len(data) - 1)
     else:
-        data.append(["1", "", "", "", "", "", ""])
+        data.append(["1", "", "", "", "", "", "", ""])
 
     info_table = Table(
         data,
-        colWidths=[9 * mm, 37 * mm, 24 * mm, 17 * mm, 20 * mm, 33 * mm, 33 * mm],
+        colWidths=[8 * mm, 36 * mm, 21 * mm, 14 * mm, 17 * mm, 27 * mm, 27 * mm, 27 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -513,7 +776,7 @@ def create_experience_pdf(
         ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), font_bold),
         ("FONTNAME", (0, 1), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 6.15),
+        ("FONTSIZE", (0, 0), (-1, -1), 5.55),
         ("LEADING", (0, 0), (-1, -1), 8.2),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("ALIGN", (1, 1), (1, -1), "LEFT"),
@@ -595,10 +858,8 @@ def create_experience_pdf(
         story.append(notes_table)
         story.append(Spacer(1, 1.5 * mm))
 
-    # Result section - iki senaryo birlikte gösterilir.
-    dual_mode = total_amount_no90 is not None and result_group_no90 is not None
-
-    if not dual_mode:
+    # Result section - üç sonuç birlikte gösterilir.
+    if total_amount_no90 is None:
         total_amount_no90 = total_amount
         result_group_no90 = result_group
         normal_total_no90 = normal_total
@@ -608,152 +869,91 @@ def create_experience_pdf(
         cap_applied_no90 = cap_applied
 
     experience_rows = [
-        ("A", WORK_EXPERIENCE_MIN["A"]),
-        ("B", WORK_EXPERIENCE_MIN["B"]),
-        ("B1", WORK_EXPERIENCE_MIN["B1"]),
-        ("C", WORK_EXPERIENCE_MIN["C"]),
-        ("C1", WORK_EXPERIENCE_MIN["C1"]),
-        ("D", WORK_EXPERIENCE_MIN["D"]),
-        ("D1", WORK_EXPERIENCE_MIN["D1"]),
-        ("E", WORK_EXPERIENCE_MIN["E"]),
-        ("E1", WORK_EXPERIENCE_MIN["E1"]),
-        ("F", WORK_EXPERIENCE_MIN["F"]),
-        ("F1", WORK_EXPERIENCE_MIN["F1"]),
-        ("G", WORK_EXPERIENCE_MIN["G"]),
-        ("G1", WORK_EXPERIENCE_MIN["G1"]),
-        ("H", None),
+        ("A", WORK_EXPERIENCE_MIN["A"]), ("B", WORK_EXPERIENCE_MIN["B"]),
+        ("B1", WORK_EXPERIENCE_MIN["B1"]), ("C", WORK_EXPERIENCE_MIN["C"]),
+        ("C1", WORK_EXPERIENCE_MIN["C1"]), ("D", WORK_EXPERIENCE_MIN["D"]),
+        ("D1", WORK_EXPERIENCE_MIN["D1"]), ("E", WORK_EXPERIENCE_MIN["E"]),
+        ("E1", WORK_EXPERIENCE_MIN["E1"]), ("F", WORK_EXPERIENCE_MIN["F"]),
+        ("F1", WORK_EXPERIENCE_MIN["F1"]), ("G", WORK_EXPERIENCE_MIN["G"]),
+        ("G1", WORK_EXPERIENCE_MIN["G1"]), ("H", None),
     ]
 
     scenario_title_style = ParagraphStyle(
-        "PDFScenarioTitle",
-        parent=center_bold,
-        fontSize=9.3,
-        leading=10.5,
+        "PDFScenarioTitle", parent=center_bold, fontSize=7.5, leading=8.3,
     )
     scenario_value_style = ParagraphStyle(
-        "PDFScenarioValue",
-        parent=value_style,
-        fontSize=13.2,
-        leading=14.5,
+        "PDFScenarioValue", parent=value_style, fontSize=10.4, leading=11.3,
     )
     scenario_group_style = ParagraphStyle(
-        "PDFScenarioGroup",
-        parent=big_result,
-        fontSize=21,
-        leading=22,
+        "PDFScenarioGroup", parent=big_result, fontSize=18, leading=19,
     )
     tiny_center = ParagraphStyle(
-        "PDFTinyCenter",
-        parent=styles["Normal"],
-        fontName=font_regular,
-        fontSize=6.5,
-        leading=7.5,
-        alignment=TA_CENTER,
-        textColor=colors.black,
+        "PDFTinyCenter", parent=styles["Normal"], fontName=font_regular,
+        fontSize=5.7, leading=6.4, alignment=TA_CENTER, textColor=colors.black,
     )
 
-    def _scenario_box(label, final_amount, final_group, normal_amount, largest, limit, cap_used, amount_key):
-        display_normal = normal_amount if normal_amount is not None else final_amount
-        rows_local = [
-            [Paragraph(label, scenario_title_style)],
-            [Paragraph(fmt_tl(display_normal).replace(" ₺", " TL"), scenario_value_style)],
-        ]
-
-        if cap_used:
-            source_parcel = str((largest or {}).get("ada_parsel", "-"))
-            source_amount = (largest or {}).get(amount_key, (largest or {}).get("amount", 0))
-            rows_local.extend([
-                [Paragraph(
-                    "3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR",
-                    scenario_title_style,
-                )],
-                [Paragraph(
-                    f"Esas alınan inşaat: {source_parcel}<br/>"
-                    f"{fmt_tl(source_amount).replace(' ₺', ' TL')} x 3",
-                    tiny_center,
-                )],
-                [Paragraph(fmt_tl(final_amount).replace(" ₺", " TL"), scenario_value_style)],
-            ])
+    def _scenario_box(label, final_amount, final_group, normal_amount, largest, cap_used, amount_key, auto=False):
+        if final_amount is None or final_group is None:
+            rows_local = [
+                [Paragraph(label, scenario_title_style)],
+                [Paragraph("HESAPLANAMADI", scenario_value_style)],
+                [Paragraph("Sözleşme tarihi / tarihsel m² maliyeti / Yİ-ÜFE verisini kontrol edin.", tiny_center)],
+            ]
         else:
-            rows_local.append([
-                Paragraph("3 kat sınırı aşılmadı", tiny_center)
+            display_normal = normal_amount if normal_amount is not None else final_amount
+            rows_local = [
+                [Paragraph(label, scenario_title_style)],
+                [Paragraph(fmt_tl(display_normal).replace(" ₺", " TL"), scenario_value_style)],
+            ]
+            if cap_used:
+                source_parcel = str((largest or {}).get("ada_parsel", "-"))
+                source_amount = (largest or {}).get(amount_key, (largest or {}).get("amount", 0))
+                rows_local.extend([
+                    [Paragraph("3 KATI SONRASI", scenario_title_style)],
+                    [Paragraph(
+                        f"{source_parcel}<br/>{fmt_tl(source_amount).replace(' ₺', ' TL')} x 3",
+                        tiny_center,
+                    )],
+                    [Paragraph(fmt_tl(final_amount).replace(" ₺", " TL"), scenario_value_style)],
+                ])
+            else:
+                rows_local.append([Paragraph("3 kat sınırı aşılmadı", tiny_center)])
+            rows_local.extend([
+                [Paragraph("ULAŞILABİLEN BELGE GRUBU", scenario_title_style)],
+                [Paragraph(final_group, scenario_group_style)],
+                [Paragraph("GRUBU", scenario_title_style)],
             ])
-
-        rows_local.extend([
-            [Paragraph("ULAŞILABİLEN BELGE GRUBU", scenario_title_style)],
-            [Paragraph(final_group, scenario_group_style)],
-            [Paragraph("GRUBU", scenario_title_style)],
-        ])
-
-        box = Table(rows_local, colWidths=[86 * mm], hAlign="CENTER")
+        box = Table(rows_local, colWidths=[56 * mm], hAlign="CENTER")
         box.setStyle(TableStyle([
             ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-            ("LINEABOVE", (0, 2), (-1, 2), 0.45, colors.black),
+            ("TOPPADDING", (0, 0), (-1, -1), 1.2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
         ]))
         return box
 
-    box_90 = _scenario_box(
-        "%90 UYGULANIRSA",
-        total_amount,
-        result_group,
-        normal_total,
-        largest_row,
-        three_times_limit,
-        cap_applied,
-        "amount_90",
-    )
-    box_no90 = _scenario_box(
-        "%90 UYGULANMAZSA",
-        total_amount_no90,
-        result_group_no90,
-        normal_total_no90,
-        largest_row_no90,
-        three_times_limit_no90,
-        cap_applied_no90,
-        "amount_no90",
-    )
+    box_90 = _scenario_box("%90 ALT SINIR", total_amount, result_group, normal_total, largest_row, cap_applied, "amount_90")
+    box_no90 = _scenario_box("%90 UYGULANMAZSA", total_amount_no90, result_group_no90, normal_total_no90, largest_row_no90, cap_applied_no90, "amount_no90")
+    box_auto = _scenario_box("SÖZLEŞME TARİHİNE GÖRE", total_amount_auto, result_group_auto, normal_total_auto, largest_row_auto, cap_applied_auto, "amount_auto", auto=True)
 
     story.append(Paragraph("HESAPLAMA SONUÇLARI", section_style))
-    dual_result = Table(
-        [[box_90, box_no90]],
-        colWidths=[88 * mm, 88 * mm],
-        hAlign="LEFT",
-    )
-    dual_result.setStyle(TableStyle([
+    result_table = Table([[box_90, box_no90, box_auto]], colWidths=[58 * mm, 58 * mm, 58 * mm], hAlign="LEFT")
+    result_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(dual_result)
-
-    # Kullanıcının istediği mevcut görsel mesafeyi koru.
+    story.append(result_table)
     story.append(Spacer(1, 30 * mm))
 
-    threshold_data = [[
-        Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARLARI", center_bold),
-        "",
-    ]]
-
+    threshold_data = [[Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARLARI", center_bold), ""]]
     for group_name, min_amount in experience_rows:
-        amount_text = (
-            "Asgari iş deneyimi aranmaz."
-            if min_amount is None
-            else fmt_tl(min_amount).replace(",00 ₺", " TL")
-        )
+        amount_text = "Asgari iş deneyimi aranmaz." if min_amount is None else fmt_tl(min_amount).replace(",00 ₺", " TL")
         threshold_data.append([group_name, amount_text])
-
-    threshold_result = Table(
-        threshold_data,
-        colWidths=[45 * mm, 95 * mm],
-        hAlign="CENTER",
-    )
-
+    threshold_result = Table(threshold_data, colWidths=[45 * mm, 95 * mm], hAlign="CENTER")
     threshold_style = [
         ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
         ("SPAN", (0, 0), (1, 0)),
@@ -768,20 +968,15 @@ def create_experience_pdf(
         ("TOPPADDING", (0, 1), (-1, -1), 0.20),
         ("BOTTOMPADDING", (0, 1), (-1, -1), 0.20),
     ]
-
-    # Her iki senaryonun ulaştığı grubu tabloda belirginleştir.
-    for grp in {result_group, result_group_no90}:
+    for grp in {g for g in (result_group, result_group_no90, result_group_auto) if g}:
         threshold_row = 1 + [g for g, _ in experience_rows].index(grp)
         threshold_style.extend([
             ("FONTNAME", (0, threshold_row), (-1, threshold_row), font_bold),
             ("LINEABOVE", (0, threshold_row), (-1, threshold_row), 0.75, colors.black),
             ("LINEBELOW", (0, threshold_row), (-1, threshold_row), 0.75, colors.black),
         ])
-
     threshold_result.setStyle(TableStyle(threshold_style))
-
-    # Ayrı flowable: yer varsa aynı sayfada kalır, sığmazsa sonraki sayfaya geçer.
-    story.append(KeepTogether([threshold_result]))
+    story.append(threshold_result)
     story.append(Spacer(1, 1 * mm))
 
     note_box = Table(
@@ -1347,25 +1542,18 @@ elif st.session_state.page == "experience":
 
     def _copy_exp5_block(src_project, src_block, dst_project, dst_block):
         for prefix in ("exp5_row_parcel", "exp5_area", "exp5_class"):
-            _copy_state_key(
-                f"{prefix}_{src_project}_{src_block}",
-                f"{prefix}_{dst_project}_{dst_block}",
-            )
+            _copy_state_key(f"{prefix}_{src_project}_{src_block}", f"{prefix}_{dst_project}_{dst_block}")
 
     def _clear_exp5_project(project_i):
-        for prefix in ("exp5_parcel", "exp5_share", "exp5_note", "exp5_block_count"):
+        for prefix in ("exp5_parcel", "exp5_share", "exp5_note", "exp5_block_count", "exp5_contract_date"):
             st.session_state.pop(f"{prefix}_{project_i}", None)
-
         for block_j in range(1, 11):
             _clear_exp5_block(project_i, block_j)
 
     def _copy_exp5_project(src_i, dst_i):
-        # Önce hedefte kalmış eski verileri temizle.
         _clear_exp5_project(dst_i)
-
-        for prefix in ("exp5_parcel", "exp5_share", "exp5_note", "exp5_block_count"):
+        for prefix in ("exp5_parcel", "exp5_share", "exp5_note", "exp5_block_count", "exp5_contract_date"):
             _copy_state_key(f"{prefix}_{src_i}", f"{prefix}_{dst_i}")
-
         for block_j in range(1, 11):
             _copy_exp5_block(src_i, block_j, dst_i, block_j)
 
@@ -1373,25 +1561,18 @@ elif st.session_state.page == "experience":
         visible = int(st.session_state.get("exp5_visible_rows", 1))
         if remove_i <= 1 or remove_i > visible:
             return
-
-        # Silinen inşaatın altındakileri bir sıra yukarı taşı.
         for project_i in range(remove_i, visible):
             _copy_exp5_project(project_i + 1, project_i)
-
         _clear_exp5_project(visible)
         st.session_state.exp5_visible_rows = max(1, visible - 1)
 
     def _remove_exp5_block(project_i, remove_j):
         count_key = f"exp5_block_count_{project_i}"
         count = int(st.session_state.get(count_key, 1))
-
         if remove_j <= 1 or remove_j > count:
             return
-
-        # Silinen bloğun altındaki blokları yukarı kaydır.
         for block_j in range(remove_j, count):
             _copy_exp5_block(project_i, block_j + 1, project_i, block_j)
-
         _clear_exp5_block(project_i, count)
         st.session_state[count_key] = max(1, count - 1)
 
@@ -1401,20 +1582,14 @@ elif st.session_state.page == "experience":
 
     def _copy_exp15_block(src_block, dst_block):
         for prefix in ("exp15_row_parcel", "exp15_area", "exp15_class"):
-            _copy_state_key(
-                f"{prefix}_{src_block}",
-                f"{prefix}_{dst_block}",
-            )
+            _copy_state_key(f"{prefix}_{src_block}", f"{prefix}_{dst_block}")
 
     def _remove_exp15_block(remove_j):
         count = int(st.session_state.get("exp15_block_count", 1))
-
         if remove_j <= 1 or remove_j > count:
             return
-
         for block_j in range(remove_j, count):
             _copy_exp15_block(block_j + 1, block_j)
-
         _clear_exp15_block(count)
         st.session_state.exp15_block_count = max(1, count - 1)
 
@@ -1432,13 +1607,38 @@ elif st.session_state.page == "experience":
         key="experience_method",
     )
 
+    # Başvuru tarihi ve otomatik aylık Yİ-ÜFE
+    application_date = st.date_input(
+        "BAŞVURU TARİHİ",
+        value=date.today(),
+        min_value=date(2011, 2, 1),
+        key="experience_application_date",
+        help="Yİ-ÜFE hesabında başvuru tarihinden bir önceki ay esas alınır.",
+    )
+    yiufe_series, yiufe_live, evds_key_present = get_yiufe_series()
+    target_month = previous_month(application_date)
+    target_index, target_source = get_yiufe_index(target_month, yiufe_series, yiufe_live)
+
+    if target_index:
+        st.caption(
+            f"📈 Yİ-ÜFE hedef ayı: **{month_label(target_month)}** — "
+            f"**{target_index:,.2f}** ({target_source})"
+        )
+    else:
+        st.warning(
+            f"{month_label(target_month)} Yİ-ÜFE verisi bulunamadı. "
+            "Sözleşme tarihine göre otomatik sonuç hesaplanamayacak."
+        )
+
+    if application_date.year != 2026:
+        st.warning(
+            "Bu uygulamadaki belge grubu eşikleri ve güncel yapı maliyetleri 2026 tablosudur. "
+            "Başvuru tarihi farklı bir yıl ise o yılın yeterlik tablosu ayrıca güncellenmelidir."
+        )
+
     st.caption(
-        "2026 güncel yapı yaklaşık birim maliyetleri otomatik kullanılır. "
-        "İlk açılışta normal tek inşaat satırı gelir. "
-        "Aynı ada/parselde farklı yapı sınıfında blok/bölüm varsa BLOK EKLE ile ilave satır açabilirsiniz. "
-        "Ada/parsel alanına isterseniz blok adını da yazabilirsiniz. "
-        "Aynı inşaat altındaki satırlar birlikte toplanır ve inşaat hissesi uygulanır. "
-        "Sonuçlar hem %90 uygulanarak hem de %90 uygulanmadan ayrı ayrı hesaplanır."
+        "Sonuçlar üç şekilde gösterilir: %90 alt sınır, %90 uygulanmayan referans ve "
+        "sözleşme tarihine göre Yİ-ÜFE + %90/%130 sınırlarıyla otomatik güncellenen tutar."
     )
 
     # ---------------------------------------------------------
@@ -1447,344 +1647,310 @@ elif st.session_state.page == "experience":
     if method.startswith("1"):
         st.subheader("Son 5 yılda bitirilen inşaatlar")
 
-        total_experience_90 = 0.0
-        total_experience_no90 = 0.0
+        total_90 = 0.0
+        total_no90 = 0.0
+        total_auto = 0.0
+        auto_all_valid = True
         entered_projects = 0
-        row_results = []       # PDF için blok bazlı satırlar
-        project_results = []   # 3 kat kuralı için inşaat/ada-parsel bazlı toplamlar
+        row_results = []
+        project_results = []
 
         if "exp5_visible_rows" not in st.session_state:
             st.session_state.exp5_visible_rows = 1
-
         visible_rows = min(max(int(st.session_state.exp5_visible_rows), 1), 10)
 
         for i in range(1, visible_rows + 1):
             title_col, remove_col = st.columns([8.8, 0.7])
-
             with title_col:
                 st.markdown(f"### {i}. İNŞAAT")
-
             with remove_col:
                 if i > 1:
-                    st.button(
-                        "✕",
-                        key=f"remove_exp5_project_{i}",
-                        help=f"{i}. inşaatı kaldır",
-                        on_click=_remove_exp5_project,
-                        args=(i,),
-                    )
+                    st.button("✕", key=f"remove_exp5_project_{i}", help=f"{i}. inşaatı kaldır", on_click=_remove_exp5_project, args=(i,))
 
-            # İnşaat üst bilgileri: ada/parsel + hisse
-            col_parcel, col_share = st.columns([1.7, 0.8])
-
+            col_parcel, col_share, col_contract = st.columns([1.45, 0.65, 0.90])
             with col_parcel:
                 ada_parsel = st.text_input(
                     "ADA PARSEL / BLOK BİLGİSİ",
                     placeholder="Örn: 123 / 45 veya 123 / 45 A Blok",
                     key=f"exp5_parcel_{i}",
                 )
-
             with col_share:
                 share = st.number_input(
-                    "İNŞAAT HİSSESİ (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=100.0,
-                    step=0.01,
-                    format="%.2f",
-                    key=f"exp5_share_{i}",
+                    "İNŞAAT HİSSESİ (%)", min_value=0.0, max_value=100.0,
+                    value=100.0, step=0.01, format="%.2f", key=f"exp5_share_{i}",
+                )
+            with col_contract:
+                default_contract = date(max(2011, min(application_date.year - 1, 2025)), 1, 1)
+                contract_date = st.date_input(
+                    "SÖZLEŞME TARİHİ",
+                    value=default_contract,
+                    min_value=date(2011, 2, 1),
+                    max_value=application_date,
+                    key=f"exp5_contract_date_{i}",
                 )
 
-            # Her inşaat ilk açılışta tek normal satırla başlar.
-            # BLOK EKLE ile ilave satırlar açılır.
+            base_month = previous_month(contract_date)
+            base_index, base_source = get_yiufe_index(base_month, yiufe_series, yiufe_live)
+            if base_index:
+                st.caption(
+                    f"Sözleşme Yİ-ÜFE ayı: {month_label(base_month)} = {base_index:,.2f} ({base_source})"
+                )
+            else:
+                st.warning(f"{month_label(base_month)} Yİ-ÜFE verisi bulunamadı.")
+
             block_count_key = f"exp5_block_count_{i}"
             if block_count_key not in st.session_state:
                 st.session_state[block_count_key] = 1
-
             block_count = min(max(int(st.session_state[block_count_key]), 1), 10)
 
-            project_gross_90 = 0.0
-            project_gross_no90 = 0.0
+            gross_90 = 0.0
+            gross_no90 = 0.0
+            gross_auto = 0.0
+            project_auto_valid = True
             project_has_area = False
 
             for j in range(1, block_count + 1):
-                # İlk satır normal inşaat satırıdır; otomatik blok adı yoktur.
-                # İkinci ve sonraki satırlar yalnızca BLOK EKLE ile açılır.
                 if j == 1:
                     st.markdown("**İNŞAAT BİLGİLERİ**")
                 else:
-                    block_title_col, block_remove_col = st.columns([8.8, 0.7])
-                    with block_title_col:
+                    btitle, bremove = st.columns([8.8, 0.7])
+                    with btitle:
                         st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
-                    with block_remove_col:
-                        st.button(
-                            "✕",
-                            key=f"remove_exp5_block_{i}_{j}",
-                            help="Bu bloğu/bölümü kaldır",
-                            on_click=_remove_exp5_block,
-                            args=(i, j),
-                        )
+                    with bremove:
+                        st.button("✕", key=f"remove_exp5_block_{i}_{j}", help="Bu bloğu/bölümü kaldır", on_click=_remove_exp5_block, args=(i, j))
 
                 if j == 1:
                     row_ada_parsel = ada_parsel
                 else:
                     row_ada_parsel = st.text_input(
-                        "ADA PARSEL / BLOK BİLGİSİ",
-                        value=ada_parsel,
-                        placeholder="Örn: 123 / 45 A Blok",
-                        key=f"exp5_row_parcel_{i}_{j}",
+                        "ADA PARSEL / BLOK BİLGİSİ", value=ada_parsel,
+                        placeholder="Örn: 123 / 45 A Blok", key=f"exp5_row_parcel_{i}_{j}",
                     )
 
-                col_area, col_class, col_cost = st.columns([0.95, 1.65, 1.0])
-
+                col_area, col_class, col_current, col_contract_cost = st.columns([0.78, 1.35, 0.78, 0.90])
                 with col_area:
                     area = st.number_input(
-                        "İNŞAAT ALANI (m²)",
-                        min_value=0.0,
-                        step=1.0,
-                        value=0.0,
-                        key=f"exp5_area_{i}_{j}",
+                        "İNŞAAT ALANI (m²)", min_value=0.0, step=0.01, value=0.0,
+                        format="%.2f", key=f"exp5_area_{i}_{j}",
                     )
-
                 with col_class:
                     bclass = st.selectbox(
-                        "GÜNCEL İNŞAAT SINIFI",
-                        list(BUILDING_UNIT_COSTS.keys()),
+                        "GÜNCEL İNŞAAT SINIFI", list(BUILDING_UNIT_COSTS.keys()),
                         format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
                         index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
                         key=f"exp5_class_{i}_{j}",
                     )
-
-                unit_cost = BUILDING_UNIT_COSTS[bclass]
-
-                with col_cost:
-                    st.markdown("**GÜNCEL m² MALİYETİ**")
+                current_cost = BUILDING_UNIT_COSTS[bclass]
+                with col_current:
+                    st.markdown("**2026 m² MALİYETİ**")
                     st.markdown(
-                        f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
-                        f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
-                        f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
+                        f"<div style='padding:.55rem .5rem;border:1px solid #d9dee8;border-radius:10px;"
+                        f"background:#f7f9fc;font-weight:800;text-align:center;'>{fmt_tl(current_cost).replace(',00 ₺',' TL')}</div>",
                         unsafe_allow_html=True,
+                    )
+
+                auto_contract_cost, cost_period = historical_contract_cost(contract_date, bclass)
+                with col_contract_cost:
+                    contract_cost = synced_contract_cost_input(
+                        f"exp5_contract_cost_{i}_{j}", auto_contract_cost,
+                        f"{contract_date.isoformat()}|{bclass}|{auto_contract_cost}",
+                    )
+                if auto_contract_cost:
+                    st.caption(f"Sözleşme m² maliyeti kaynağı/dönemi: **{cost_period}**. Gerekirse elle değiştirilebilir.")
+                else:
+                    st.warning(
+                        f"{cost_period}. Bu blok için sözleşme tarihindeki m² maliyetini elle girin."
                     )
 
                 if area > 0:
                     project_has_area = True
-
-                    # İki senaryo:
-                    # 1) m² x birim maliyet x %85 x %90
-                    # 2) m² x birim maliyet x %85
-                    base_85 = area * unit_cost * 0.85
+                    base_85 = area * current_cost * 0.85
                     block_90 = base_85 * 0.90
                     block_no90 = base_85
+                    gross_90 += block_90
+                    gross_no90 += block_no90
 
-                    project_gross_90 += block_90
-                    project_gross_no90 += block_no90
+                    auto_calc = date_based_block_calculation(
+                        area, current_cost, contract_cost, contract_date, application_date,
+                        yiufe_series, yiufe_live,
+                    )
+                    if auto_calc:
+                        block_auto = auto_calc["amount"]
+                        gross_auto += block_auto
+                        st.caption(
+                            f"📌 {month_label(auto_calc['base_month'])} {auto_calc['base_index']:,.2f} → "
+                            f"{month_label(auto_calc['target_month'])} {auto_calc['target_index']:,.2f} | "
+                            f"Yİ-ÜFE: {auto_calc['yiufe_coeff']:.4f} | Alt: {auto_calc['lower_coeff']:.4f} | "
+                            f"Üst: {auto_calc['upper_coeff']:.4f} | Uygulanan: {auto_calc['applied_coeff']:.4f} — "
+                            f"**{auto_calc['reason']}**"
+                        )
+                    else:
+                        block_auto = None
+                        project_auto_valid = False
 
                     share_ratio = share / 100.0
-
-                    # PDF'de iki iş deneyimi tutarı yan yana gösterilir.
                     row_results.append({
-                        "row": f"{i}.{j}",
-                        "project_id": i,
+                        "row": f"{i}.{j}", "project_id": i,
                         "project_label": ada_parsel.strip() or f"{i}. İnşaat",
                         "ada_parsel": (
-                            f"{row_ada_parsel.strip() or ada_parsel.strip() or f'{i}. İnşaat'} "
-                            f"(%{share:g})"
+                            f"{row_ada_parsel.strip() or ada_parsel.strip() or f'{i}. İnşaat'} (%{share:g})"
+                            f"<br/><font size='5'>Söz: {contract_date.strftime('%d.%m.%Y')}</font>"
                         ),
-                        "area": area,
-                        "class": bclass,
-                        "unit_cost": unit_cost,
+                        "area": area, "class": bclass, "unit_cost": current_cost,
                         "amount": block_90 * share_ratio,
                         "amount_90": block_90 * share_ratio,
                         "amount_no90": block_no90 * share_ratio,
+                        "amount_auto": (block_auto * share_ratio if block_auto is not None else None),
                     })
 
                 if j < block_count:
                     st.markdown("---")
 
-            # Aynı ada/parselde yeni blok
             if block_count < 10:
-                if st.button(
-                    "＋ BLOK EKLE",
-                    key=f"add_exp5_block_{i}",
-                    use_container_width=False,
-                ):
+                if st.button("＋ BLOK EKLE", key=f"add_exp5_block_{i}", use_container_width=False):
                     st.session_state[block_count_key] = block_count + 1
                     st.rerun()
             else:
                 st.caption("Bu inşaat için en fazla 10 blok ekleyebilirsiniz.")
 
             construction_note = st.text_input(
-                "NOT",
-                placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...",
-                key=f"exp5_note_{i}",
+                "NOT", placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...", key=f"exp5_note_{i}",
             )
 
             if project_has_area:
                 entered_projects += 1
                 share_ratio = share / 100.0
-                project_amount_90 = project_gross_90 * share_ratio
-                project_amount_no90 = project_gross_no90 * share_ratio
-
-                total_experience_90 += project_amount_90
-                total_experience_no90 += project_amount_no90
+                amount_90 = gross_90 * share_ratio
+                amount_no90 = gross_no90 * share_ratio
+                amount_auto = gross_auto * share_ratio if project_auto_valid else None
+                total_90 += amount_90
+                total_no90 += amount_no90
+                if amount_auto is not None:
+                    total_auto += amount_auto
+                else:
+                    auto_all_valid = False
 
                 project_results.append({
-                    "row": i,
-                    "ada_parsel": ada_parsel.strip() or f"{i}. İnşaat",
-                    "share": share,
-                    "note": construction_note.strip(),
-                    "amount": project_amount_90,
-                    "amount_90": project_amount_90,
-                    "amount_no90": project_amount_no90,
-                    "gross_amount_90": project_gross_90,
-                    "gross_amount_no90": project_gross_no90,
+                    "row": i, "ada_parsel": ada_parsel.strip() or f"{i}. İnşaat",
+                    "share": share, "note": construction_note.strip(),
+                    "contract_date": contract_date,
+                    "amount": amount_90, "amount_90": amount_90,
+                    "amount_no90": amount_no90, "amount_auto": amount_auto,
                     "block_count": block_count,
                 })
-
                 for pdf_row in row_results:
                     if pdf_row.get("project_id") == i:
-                        pdf_row["project_total"] = project_amount_90
-                        pdf_row["project_total_90"] = project_amount_90
-                        pdf_row["project_total_no90"] = project_amount_no90
+                        pdf_row["project_total"] = amount_90
+                        pdf_row["project_total_90"] = amount_90
+                        pdf_row["project_total_no90"] = amount_no90
+                        pdf_row["project_total_auto"] = amount_auto
 
+                auto_text = fmt_tl(amount_auto) if amount_auto is not None else "HESAPLANAMADI"
                 st.info(
-                    f"**{i}. inşaat - %90 uygulanırsa:** {fmt_tl(project_amount_90)}  |  "
-                    f"**%90 uygulanmazsa:** {fmt_tl(project_amount_no90)}  "
-                    f"— Hisse: **%{share:g}**"
+                    f"**{i}. inşaat:** %90 = {fmt_tl(amount_90)} | %90 yok = {fmt_tl(amount_no90)} | "
+                    f"**Sözleşme tarihine göre = {auto_text}**"
                 )
 
             if i < visible_rows:
                 st.divider()
 
         st.write("")
-
         if visible_rows < 10:
-            if st.button(
-                "＋ İNŞAAT EKLE",
-                key="add_exp5_row",
-                use_container_width=True,
-            ):
+            if st.button("＋ İNŞAAT EKLE", key="add_exp5_row", use_container_width=True):
                 st.session_state.exp5_visible_rows = visible_rows + 1
                 st.rerun()
         else:
             st.caption("En fazla 10 inşaat ekleyebilirsiniz.")
 
         if entered_projects > 0:
-            # ---------------- %90 UYGULANAN SENARYO ----------------
-            normal_group_90 = work_experience_group(total_experience_90)
-            largest_project_90 = max(project_results, key=lambda x: x["amount_90"])
-            three_times_limit_90 = largest_project_90["amount_90"] * 3
-            capped_experience_90 = min(total_experience_90, three_times_limit_90)
-            capped_group_90 = work_experience_group(capped_experience_90)
-            cap_applied_90 = total_experience_90 > three_times_limit_90
+            # %90
+            normal_group_90 = work_experience_group(total_90)
+            largest_90 = max(project_results, key=lambda x: x["amount_90"])
+            limit_90 = largest_90["amount_90"] * 3
+            final_90 = min(total_90, limit_90)
+            group_90 = work_experience_group(final_90)
+            cap_90 = total_90 > limit_90
 
-            # ---------------- %90 UYGULANMAYAN SENARYO --------------
-            normal_group_no90 = work_experience_group(total_experience_no90)
-            largest_project_no90 = max(project_results, key=lambda x: x["amount_no90"])
-            three_times_limit_no90 = largest_project_no90["amount_no90"] * 3
-            capped_experience_no90 = min(total_experience_no90, three_times_limit_no90)
-            capped_group_no90 = work_experience_group(capped_experience_no90)
-            cap_applied_no90 = total_experience_no90 > three_times_limit_no90
+            # %90 yok
+            normal_group_no90 = work_experience_group(total_no90)
+            largest_no90 = max(project_results, key=lambda x: x["amount_no90"])
+            limit_no90 = largest_no90["amount_no90"] * 3
+            final_no90 = min(total_no90, limit_no90)
+            group_no90 = work_experience_group(final_no90)
+            cap_no90 = total_no90 > limit_no90
 
-            st.markdown("### İki Senaryolu Sonuç")
-
-            result_col_90, result_col_no90 = st.columns(2)
-
-            with result_col_90:
-                st.markdown(f"""
-                <div class="result-card">
-                    <div><b>%90 UYGULANIRSA</b></div>
-                    <div style="font-size:.88rem;margin-top:.35rem;">Normal toplam</div>
-                    <div style="font-size:1.35rem;font-weight:800;">{fmt_tl(total_experience_90)}</div>
-                    <div style="margin-top:.45rem;">Dikkate alınan tutar</div>
-                    <div class="result-number">{fmt_tl(capped_experience_90)}</div>
-                    <div style="font-size:1.8rem;font-weight:800;">{capped_group_90} GRUBU</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                if cap_applied_90:
-                    st.caption(
-                        f"3 kat kuralı: {largest_project_90['ada_parsel']} - "
-                        f"{fmt_tl(largest_project_90['amount_90'])} x 3"
-                    )
-                else:
-                    st.caption("3 kat sınırı aşılmadı.")
-
-            with result_col_no90:
-                st.markdown(f"""
-                <div class="joint-result">
-                    <div><b>%90 UYGULANMAZSA</b></div>
-                    <div style="font-size:.88rem;margin-top:.35rem;">Normal toplam</div>
-                    <div style="font-size:1.35rem;font-weight:800;">{fmt_tl(total_experience_no90)}</div>
-                    <div style="margin-top:.45rem;">Dikkate alınan tutar</div>
-                    <div class="result-number">{fmt_tl(capped_experience_no90)}</div>
-                    <div style="font-size:1.8rem;font-weight:800;">{capped_group_no90} GRUBU</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                if cap_applied_no90:
-                    st.caption(
-                        f"3 kat kuralı: {largest_project_no90['ada_parsel']} - "
-                        f"{fmt_tl(largest_project_no90['amount_no90'])} x 3"
-                    )
-                else:
-                    st.caption("3 kat sınırı aşılmadı.")
-
-            if capped_group_90 != capped_group_no90:
-                st.warning(
-                    f"Belge grubu iki hesaba göre değişiyor: "
-                    f"**%90 uygulanırsa {capped_group_90}**, "
-                    f"**%90 uygulanmazsa {capped_group_no90}**. "
-                    f"Başvuruda sözleşme yılına göre geçerli hesap dikkate alınmalıdır."
-                )
+            # Sözleşme tarihine göre otomatik
+            if auto_all_valid and all(p.get("amount_auto") is not None for p in project_results):
+                normal_group_auto = work_experience_group(total_auto)
+                largest_auto = max(project_results, key=lambda x: x["amount_auto"])
+                limit_auto = largest_auto["amount_auto"] * 3
+                final_auto = min(total_auto, limit_auto)
+                group_auto = work_experience_group(final_auto)
+                cap_auto = total_auto > limit_auto
             else:
-                st.success(
-                    f"Her iki hesapta da sonuç **{capped_group_90} grubu**. "
-                    f"Tutarlar farklı olsa da belge grubu değişmiyor."
-                )
+                normal_group_auto = None
+                largest_auto = None
+                limit_auto = None
+                final_auto = None
+                group_auto = None
+                cap_auto = False
 
-            st.caption(
-                "Aynı inşaat altında eklenen tüm satırlar tek inşaat olarak birlikte değerlendirilir. "
-                "İnşaat hissesi toplam üzerine uygulanır. 3 kat sınırı her senaryo için ayrı hesaplanır."
-            )
+            st.markdown("### Hesaplama Sonuçları")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"""
+                <div class="result-card"><div><b>%90 ALT SINIR</b></div>
+                <div class="result-number">{fmt_tl(final_90)}</div>
+                <div style="font-size:1.65rem;font-weight:800;">{group_90} GRUBU</div></div>
+                """, unsafe_allow_html=True)
+                st.caption(f"Normal toplam: {fmt_tl(total_90)}" + (f" | 3 kat: {largest_90['ada_parsel']}" if cap_90 else " | 3 kat sınırı aşılmadı"))
+            with c2:
+                st.markdown(f"""
+                <div class="joint-result"><div><b>%90 UYGULANMAZSA</b></div>
+                <div class="result-number">{fmt_tl(final_no90)}</div>
+                <div style="font-size:1.65rem;font-weight:800;">{group_no90} GRUBU</div></div>
+                """, unsafe_allow_html=True)
+                st.caption(f"Normal toplam: {fmt_tl(total_no90)}" + (f" | 3 kat: {largest_no90['ada_parsel']}" if cap_no90 else " | 3 kat sınırı aşılmadı"))
+            with c3:
+                if final_auto is not None:
+                    st.markdown(f"""
+                    <div style="padding:1.25rem;border-radius:20px;background:#fff7e8;border:1px solid #efd49d;text-align:center;margin:1rem 0;">
+                    <div><b>SÖZLEŞME TARİHİNE GÖRE</b></div>
+                    <div class="result-number">{fmt_tl(final_auto)}</div>
+                    <div style="font-size:1.65rem;font-weight:800;">{group_auto} GRUBU</div></div>
+                    """, unsafe_allow_html=True)
+                    st.caption(f"Normal toplam: {fmt_tl(total_auto)}" + (f" | 3 kat: {largest_auto['ada_parsel']}" if cap_auto else " | 3 kat sınırı aşılmadı"))
+                else:
+                    st.error("SÖZLEŞME TARİHİNE GÖRE sonuç hesaplanamadı. Eksik tarihsel m² maliyeti veya Yİ-ÜFE verisini tamamlayın.")
+
+            if group_auto:
+                st.success(
+                    f"📌 **Başvuruda kontrol edilecek otomatik sonuç: {group_auto} GRUBU — {fmt_tl(final_auto)}**"
+                )
 
             pdf_notes = [
-                {
-                    "ada_parsel": p["ada_parsel"],
-                    "note": p["note"],
-                }
-                for p in project_results
-                if p.get("note", "").strip()
+                {"ada_parsel": p["ada_parsel"], "note": p["note"]}
+                for p in project_results if p.get("note", "").strip()
             ]
-
             pdf_bytes = create_experience_pdf(
                 method_name="Son 5 yılda bitirilen inşaatların toplamı",
                 rows=row_results,
-                total_amount=capped_experience_90,
-                result_group=capped_group_90,
-                normal_total=total_experience_90,
-                normal_group=normal_group_90,
-                largest_row=largest_project_90,
-                three_times_limit=three_times_limit_90,
-                cap_applied=cap_applied_90,
+                total_amount=final_90, result_group=group_90,
+                normal_total=total_90, normal_group=normal_group_90,
+                largest_row=largest_90, three_times_limit=limit_90, cap_applied=cap_90,
                 notes=pdf_notes,
-                total_amount_no90=capped_experience_no90,
-                result_group_no90=capped_group_no90,
-                normal_total_no90=total_experience_no90,
-                normal_group_no90=normal_group_no90,
-                largest_row_no90=largest_project_no90,
-                three_times_limit_no90=three_times_limit_no90,
-                cap_applied_no90=cap_applied_no90,
+                total_amount_no90=final_no90, result_group_no90=group_no90,
+                normal_total_no90=total_no90, normal_group_no90=normal_group_no90,
+                largest_row_no90=largest_no90, three_times_limit_no90=limit_no90, cap_applied_no90=cap_no90,
+                total_amount_auto=final_auto, result_group_auto=group_auto,
+                normal_total_auto=total_auto if final_auto is not None else None,
+                normal_group_auto=normal_group_auto, largest_row_auto=largest_auto,
+                three_times_limit_auto=limit_auto, cap_applied_auto=cap_auto,
             )
-
             st.download_button(
-                "📄 DÖKÜM AL",
-                data=pdf_bytes,
+                "📄 DÖKÜM AL", data=pdf_bytes,
                 file_name=f"muteahhitlik_is_deneyim_dokumu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary",
-                key="download_exp5_pdf",
+                mime="application/pdf", use_container_width=True, type="primary", key="download_exp5_pdf",
             )
         else:
             st.info("Hesaplama için en az bir inşaatın/blokun alanını girin.")
@@ -1795,214 +1961,144 @@ elif st.session_state.page == "experience":
     else:
         st.subheader("Son 15 yıldaki tek inşaat")
 
-        col_parcel, col_share = st.columns([1.7, 0.8])
-
+        col_parcel, col_share, col_contract = st.columns([1.45, 0.65, 0.90])
         with col_parcel:
-            ada_parsel = st.text_input(
-                "ADA PARSEL / BLOK BİLGİSİ",
-                placeholder="Örn: 123 / 45 veya 123 / 45 A Blok",
-                key="exp15_parcel",
+            ada_parsel = st.text_input("ADA PARSEL / BLOK BİLGİSİ", placeholder="Örn: 123 / 45", key="exp15_parcel")
+        with col_share:
+            share = st.number_input("İNŞAAT HİSSESİ (%)", min_value=0.0, max_value=100.0, value=100.0, step=0.01, format="%.2f", key="exp15_share")
+        with col_contract:
+            default_contract = date(max(2011, min(application_date.year - 1, 2025)), 1, 1)
+            contract_date = st.date_input(
+                "SÖZLEŞME TARİHİ", value=default_contract, min_value=date(2011, 2, 1),
+                max_value=application_date, key="exp15_contract_date",
             )
 
-        with col_share:
-            share = st.number_input(
-                "İNŞAAT HİSSESİ (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=100.0,
-                step=0.01,
-                format="%.2f",
-                key="exp15_share",
-            )
+        base_month = previous_month(contract_date)
+        base_index, base_source = get_yiufe_index(base_month, yiufe_series, yiufe_live)
+        if base_index:
+            st.caption(f"Sözleşme Yİ-ÜFE ayı: {month_label(base_month)} = {base_index:,.2f} ({base_source})")
 
         if "exp15_block_count" not in st.session_state:
             st.session_state.exp15_block_count = 1
-
         block_count = min(max(int(st.session_state.exp15_block_count), 1), 10)
-        project_gross_90 = 0.0
-        project_gross_no90 = 0.0
+        gross_90 = gross_no90 = gross_auto = 0.0
+        auto_valid = True
         single_rows = []
 
         for j in range(1, block_count + 1):
             if j == 1:
                 st.markdown("**İNŞAAT BİLGİLERİ**")
             else:
-                block_title_col, block_remove_col = st.columns([8.8, 0.7])
-                with block_title_col:
+                btitle, bremove = st.columns([8.8, 0.7])
+                with btitle:
                     st.markdown(f"**EK BLOK / BÖLÜM {j - 1}**")
-                with block_remove_col:
-                    st.button(
-                        "✕",
-                        key=f"remove_exp15_block_{j}",
-                        help="Bu bloğu/bölümü kaldır",
-                        on_click=_remove_exp15_block,
-                        args=(j,),
-                    )
+                with bremove:
+                    st.button("✕", key=f"remove_exp15_block_{j}", help="Bu bloğu/bölümü kaldır", on_click=_remove_exp15_block, args=(j,))
 
-            if j == 1:
-                row_ada_parsel = ada_parsel
-            else:
-                row_ada_parsel = st.text_input(
-                    "ADA PARSEL / BLOK BİLGİSİ",
-                    value=ada_parsel,
-                    placeholder="Örn: 123 / 45 A Blok",
-                    key=f"exp15_row_parcel_{j}",
-                )
-
-            col_area, col_class, col_cost = st.columns([0.95, 1.65, 1.0])
-
+            row_ada_parsel = ada_parsel if j == 1 else st.text_input(
+                "ADA PARSEL / BLOK BİLGİSİ", value=ada_parsel, key=f"exp15_row_parcel_{j}",
+            )
+            col_area, col_class, col_current, col_contract_cost = st.columns([0.78, 1.35, 0.78, 0.90])
             with col_area:
-                area = st.number_input(
-                    "İNŞAAT ALANI (m²)",
-                    min_value=0.0,
-                    step=1.0,
-                    value=0.0,
-                    key=f"exp15_area_{j}",
-                )
-
+                area = st.number_input("İNŞAAT ALANI (m²)", min_value=0.0, step=0.01, value=0.0, format="%.2f", key=f"exp15_area_{j}")
             with col_class:
                 bclass = st.selectbox(
-                    "GÜNCEL İNŞAAT SINIFI",
-                    list(BUILDING_UNIT_COSTS.keys()),
+                    "GÜNCEL İNŞAAT SINIFI", list(BUILDING_UNIT_COSTS.keys()),
                     format_func=lambda x: f"{x} — {BUILDING_CLASSES[x]}",
-                    index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"),
-                    key=f"exp15_class_{j}",
+                    index=list(BUILDING_UNIT_COSTS.keys()).index("III-B"), key=f"exp15_class_{j}",
                 )
-
-            unit_cost = BUILDING_UNIT_COSTS[bclass]
-
-            with col_cost:
-                st.markdown("**GÜNCEL m² MALİYETİ**")
-                st.markdown(
-                    f"<div style='padding:0.55rem 0.7rem;border:1px solid #d9dee8;"
-                    f"border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>"
-                    f"{fmt_tl(unit_cost).replace(',00 ₺',' ₺')}/m²</div>",
-                    unsafe_allow_html=True,
+            current_cost = BUILDING_UNIT_COSTS[bclass]
+            with col_current:
+                st.markdown("**2026 m² MALİYETİ**")
+                st.markdown(f"<div style='padding:.55rem .5rem;border:1px solid #d9dee8;border-radius:10px;background:#f7f9fc;font-weight:800;text-align:center;'>{fmt_tl(current_cost).replace(',00 ₺',' TL')}</div>", unsafe_allow_html=True)
+            auto_contract_cost, cost_period = historical_contract_cost(contract_date, bclass)
+            with col_contract_cost:
+                contract_cost = synced_contract_cost_input(
+                    f"exp15_contract_cost_{j}", auto_contract_cost,
+                    f"{contract_date.isoformat()}|{bclass}|{auto_contract_cost}",
                 )
+            if auto_contract_cost:
+                st.caption(f"Sözleşme m² maliyeti dönemi: **{cost_period}**. Gerekirse elle değiştirilebilir.")
+            else:
+                st.warning(f"{cost_period}. Sözleşme tarihindeki m² maliyetini elle girin.")
 
             if area > 0:
-                base_85 = area * unit_cost * 0.85
-                block_90 = base_85 * 0.90
-                block_no90 = base_85
-                project_gross_90 += block_90
-                project_gross_no90 += block_no90
-
-                share_ratio = share / 100.0
-
+                base_85 = area * current_cost * 0.85
+                b90, bno90 = base_85 * 0.90, base_85
+                gross_90 += b90
+                gross_no90 += bno90
+                auto_calc = date_based_block_calculation(area, current_cost, contract_cost, contract_date, application_date, yiufe_series, yiufe_live)
+                if auto_calc:
+                    bauto = auto_calc["amount"]
+                    gross_auto += bauto
+                    st.caption(
+                        f"📌 Yİ-ÜFE {auto_calc['yiufe_coeff']:.4f} | Alt {auto_calc['lower_coeff']:.4f} | "
+                        f"Üst {auto_calc['upper_coeff']:.4f} | Uygulanan {auto_calc['applied_coeff']:.4f} — **{auto_calc['reason']}**"
+                    )
+                else:
+                    bauto = None
+                    auto_valid = False
+                sr = share / 100.0
                 single_rows.append({
-                    "row": f"1.{j}",
-                    "project_id": 1,
-                    "project_label": ada_parsel.strip() or "1. İnşaat",
-                    "ada_parsel": (
-                        f"{row_ada_parsel.strip() or ada_parsel.strip() or '1. İnşaat'} "
-                        f"(%{share:g})"
-                    ),
-                    "area": area,
-                    "class": bclass,
-                    "unit_cost": unit_cost,
-                    "amount": block_90 * share_ratio * 2,
-                    "amount_90": block_90 * share_ratio * 2,
-                    "amount_no90": block_no90 * share_ratio * 2,
+                    "row": f"1.{j}", "project_id": 1, "project_label": ada_parsel.strip() or "1. İnşaat",
+                    "ada_parsel": f"{row_ada_parsel.strip() or ada_parsel.strip() or '1. İnşaat'} (%{share:g})<br/><font size='5'>Söz: {contract_date.strftime('%d.%m.%Y')}</font>",
+                    "area": area, "class": bclass, "unit_cost": current_cost,
+                    "amount": b90 * sr * 2, "amount_90": b90 * sr * 2,
+                    "amount_no90": bno90 * sr * 2,
+                    "amount_auto": (bauto * sr * 2 if bauto is not None else None),
                 })
-
             if j < block_count:
                 st.markdown("---")
 
         if block_count < 10:
-            if st.button(
-                "＋ BLOK EKLE",
-                key="add_exp15_block",
-                use_container_width=False,
-            ):
+            if st.button("＋ BLOK EKLE", key="add_exp15_block", use_container_width=False):
                 st.session_state.exp15_block_count = block_count + 1
                 st.rerun()
 
-        construction_note = st.text_input(
-            "NOT",
-            placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...",
-            key="exp15_note",
-        )
+        construction_note = st.text_input("NOT", placeholder="Bu inşaatla ilgili notunuzu yazabilirsiniz...", key="exp15_note")
 
-        if project_gross_90 > 0:
-            share_ratio = share / 100.0
+        if gross_90 > 0:
+            sr = share / 100.0
+            total_90 = gross_90 * sr * 2
+            total_no90 = gross_no90 * sr * 2
+            total_auto = gross_auto * sr * 2 if auto_valid else None
+            group_90 = work_experience_group(total_90)
+            group_no90 = work_experience_group(total_no90)
+            group_auto = work_experience_group(total_auto) if total_auto is not None else None
+            for r in single_rows:
+                r["project_total"] = total_90
+                r["project_total_90"] = total_90
+                r["project_total_no90"] = total_no90
+                r["project_total_auto"] = total_auto
 
-            share_adjusted_90 = project_gross_90 * share_ratio
-            share_adjusted_no90 = project_gross_no90 * share_ratio
-
-            total_experience_90 = share_adjusted_90 * 2
-            total_experience_no90 = share_adjusted_no90 * 2
-
-            result_group_90 = work_experience_group(total_experience_90)
-            result_group_no90 = work_experience_group(total_experience_no90)
-
-            for pdf_row in single_rows:
-                pdf_row["project_total"] = total_experience_90
-                pdf_row["project_total_90"] = total_experience_90
-                pdf_row["project_total_no90"] = total_experience_no90
-
-            st.markdown("### İki Senaryolu Sonuç")
-            result_col_90, result_col_no90 = st.columns(2)
-
-            with result_col_90:
-                st.markdown(f"""
-                <div class="result-card">
-                    <div><b>%90 UYGULANIRSA</b></div>
-                    <div style="margin-top:.4rem;">2 kat dikkate alınan tutar</div>
-                    <div class="result-number">{fmt_tl(total_experience_90)}</div>
-                    <div style="font-size:1.8rem;font-weight:800;">{result_group_90} GRUBU</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with result_col_no90:
-                st.markdown(f"""
-                <div class="joint-result">
-                    <div><b>%90 UYGULANMAZSA</b></div>
-                    <div style="margin-top:.4rem;">2 kat dikkate alınan tutar</div>
-                    <div class="result-number">{fmt_tl(total_experience_no90)}</div>
-                    <div style="font-size:1.8rem;font-weight:800;">{result_group_no90} GRUBU</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            if result_group_90 != result_group_no90:
-                st.warning(
-                    f"Belge grubu iki hesaba göre değişiyor: "
-                    f"**%90 uygulanırsa {result_group_90}**, "
-                    f"**%90 uygulanmazsa {result_group_no90}**."
-                )
-            else:
-                st.success(
-                    f"Her iki hesapta da sonuç **{result_group_90} grubu**."
-                )
+            st.markdown("### Hesaplama Sonuçları")
+            c1, c2, c3 = st.columns(3)
+            for col, title, amount, grp, bg in [
+                (c1, "%90 ALT SINIR", total_90, group_90, "#eef8f1"),
+                (c2, "%90 UYGULANMAZSA", total_no90, group_no90, "#eef4ff"),
+                (c3, "SÖZLEŞME TARİHİNE GÖRE", total_auto, group_auto, "#fff7e8"),
+            ]:
+                with col:
+                    if amount is not None:
+                        st.markdown(f"<div style='padding:1.1rem;border-radius:20px;background:{bg};border:1px solid #d7d7d7;text-align:center;margin:1rem 0;'><div><b>{title}</b></div><div class='result-number'>{fmt_tl(amount)}</div><div style='font-size:1.6rem;font-weight:800;'>{grp} GRUBU</div></div>", unsafe_allow_html=True)
+                    else:
+                        st.error(f"{title}: Hesaplanamadı")
 
             pdf_notes = []
             if construction_note.strip():
-                pdf_notes.append({
-                    "ada_parsel": ada_parsel.strip() or "1. İnşaat",
-                    "note": construction_note.strip(),
-                })
-
+                pdf_notes.append({"ada_parsel": ada_parsel.strip() or "1. İnşaat", "note": construction_note.strip()})
             pdf_bytes = create_experience_pdf(
                 method_name="Son 15 yıldaki tek inşaatın 2 kat dikkate alınması",
                 rows=single_rows,
-                total_amount=total_experience_90,
-                result_group=result_group_90,
-                normal_total=total_experience_90,
-                normal_group=result_group_90,
+                total_amount=total_90, result_group=group_90, normal_total=total_90, normal_group=group_90,
                 notes=pdf_notes,
-                total_amount_no90=total_experience_no90,
-                result_group_no90=result_group_no90,
-                normal_total_no90=total_experience_no90,
-                normal_group_no90=result_group_no90,
+                total_amount_no90=total_no90, result_group_no90=group_no90, normal_total_no90=total_no90, normal_group_no90=group_no90,
+                total_amount_auto=total_auto, result_group_auto=group_auto, normal_total_auto=total_auto, normal_group_auto=group_auto,
             )
-
             st.download_button(
-                "📄 DÖKÜM AL",
-                data=pdf_bytes,
+                "📄 DÖKÜM AL", data=pdf_bytes,
                 file_name=f"muteahhitlik_is_deneyim_dokumu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary",
-                key="download_exp15_pdf",
+                mime="application/pdf", use_container_width=True, type="primary", key="download_exp15_pdf",
             )
         else:
             st.info("Hesaplama için en az bir blok/inşaat alanını girin.")
@@ -2017,6 +2113,7 @@ elif st.session_state.page == "experience":
 
     st.caption(
         "Sonuç yalnızca asgari iş deneyim tutarı kriterine göre hesaplanır. "
-        "%90 oranının uygulanıp uygulanmayacağı sözleşme yılı ve ilgili başvuru şartlarına göre değerlendirilmelidir. "
-        "Üst gruplarda ekonomik, mali, teknik personel ve diğer yeterlik şartları ayrıca aranabilir."
+        "Sözleşme tarihine göre otomatik hesap; sözleşmeden önceki ay ve başvurudan önceki ay Yİ-ÜFE endekslerini, "
+        "yapı maliyeti artışının %90 alt ve %130 üst sınırlarını birlikte değerlendirir. "
+        "Resmî başvuruda ilgili idarenin değerlendirmesi esastır."
     )
