@@ -10,7 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, KeepTogether
 
 st.set_page_config(
     page_title="Müteahhitlik Sınıf Hesaplama",
@@ -248,6 +248,13 @@ def create_experience_pdf(
     three_times_limit=None,
     cap_applied=False,
     notes=None,
+    total_amount_no90=None,
+    result_group_no90=None,
+    normal_total_no90=None,
+    normal_group_no90=None,
+    largest_row_no90=None,
+    three_times_limit_no90=None,
+    cap_applied_no90=False,
 ):
     """Sade PDF dökümü oluşturur: detaylı hesaplama yok, sadece özet tablo ve sonuç."""
     buffer = BytesIO()
@@ -395,6 +402,7 @@ def create_experience_pdf(
     method_table = Table(
         [
             ["Yöntem", method_name],
+            ["Hesap", "İş deneyimi hem %90 uygulanarak hem de %90 uygulanmadan ayrı ayrı gösterilmiştir."],
             ["Not", "Toplam tutar, en büyük iş deneyiminin 3 katını geçemez (Yönetmelik)."],
         ],
         colWidths=[30 * mm, 147 * mm],
@@ -423,8 +431,9 @@ def create_experience_pdf(
         "Ada Parsel",
         "İnşaat Alanı (m²)",
         "Yapı Sınıfı",
-        "m² Maliyeti (TL)",
-        "Blok İş Deneyimi",
+        "m² Maliyeti",
+        "İş Deneyimi\n(%90 Uyg.)",
+        "İş Deneyimi\n(%90 Yok)",
     ]]
     max_rows = max(len(rows), 1)
     summary_row_indexes = []
@@ -438,7 +447,8 @@ def create_experience_pdf(
                 fmt_pdf_m2(row.get("area", 0)),
                 str(row.get("class", "")),
                 f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
-                fmt_tl(row.get("amount", 0)).replace(" ₺", " TL"),
+                fmt_tl(row.get("amount_90", row.get("amount", 0))).replace(" ₺", " TL"),
+                fmt_tl(row.get("amount_no90", row.get("amount", 0))).replace(" ₺", " TL"),
             ])
 
             current_project = row.get("project_id")
@@ -464,9 +474,13 @@ def create_experience_pdf(
                     or f"{current_project}. İnşaat"
                 )
                 project_area_total = sum(float(r.get("area", 0) or 0) for r in project_rows)
-                project_experience_total = row.get(
-                    "project_total",
-                    sum(float(r.get("amount", 0) or 0) for r in project_rows),
+                project_experience_total_90 = row.get(
+                    "project_total_90",
+                    sum(float(r.get("amount_90", r.get("amount", 0)) or 0) for r in project_rows),
+                )
+                project_experience_total_no90 = row.get(
+                    "project_total_no90",
+                    sum(float(r.get("amount_no90", r.get("amount", 0)) or 0) for r in project_rows),
                 )
                 part_count = len(project_rows)
 
@@ -479,16 +493,17 @@ def create_experience_pdf(
                     fmt_pdf_m2(project_area_total),
                     "",
                     "",
-                    fmt_tl(project_experience_total).replace(" ₺", " TL"),
+                    fmt_tl(project_experience_total_90).replace(" ₺", " TL"),
+                    fmt_tl(project_experience_total_no90).replace(" ₺", " TL"),
                 ])
                 summary_row_indexes.append(len(data) - 1)
                 project_row_indexes.setdefault(current_project, []).append(len(data) - 1)
     else:
-        data.append(["1", "", "", "", "", ""])
+        data.append(["1", "", "", "", "", "", ""])
 
     info_table = Table(
         data,
-        colWidths=[11 * mm, 42 * mm, 28 * mm, 20 * mm, 24 * mm, 48 * mm],
+        colWidths=[9 * mm, 37 * mm, 24 * mm, 17 * mm, 20 * mm, 33 * mm, 33 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -498,7 +513,7 @@ def create_experience_pdf(
         ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
         ("FONTNAME", (0, 0), (-1, 0), font_bold),
         ("FONTNAME", (0, 1), (-1, -1), font_regular),
-        ("FONTSIZE", (0, 0), (-1, -1), 6.65),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.15),
         ("LEADING", (0, 0), (-1, -1), 8.2),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("ALIGN", (1, 1), (1, -1), "LEFT"),
@@ -580,32 +595,17 @@ def create_experience_pdf(
         story.append(notes_table)
         story.append(Spacer(1, 1.5 * mm))
 
-    # Result section
-    # Ulaşılabilen belge grubu kutusu artık 3 cm'lik boşluğun solunda yer alır.
-    # Sağ tarafta hesaplama sonucu ile asgari iş deneyim tablosu arasında
-    # gerçekten boş (çizgisiz) 30 mm alan bırakılır.
-    left_result = Table(
-        [[
-            Paragraph("ULAŞILABİLEN<br/>BELGE GRUBU", center_bold),
-        ], [
-            Paragraph(result_group, big_result),
-        ], [
-            Paragraph("GRUBU", center_bold),
-        ]],
-        colWidths=[52 * mm],
-        hAlign="CENTER",
-    )
-    left_result.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
+    # Result section - iki senaryo birlikte gösterilir.
+    dual_mode = total_amount_no90 is not None and result_group_no90 is not None
 
-    raw_calc_amount = normal_total if (cap_applied and normal_total is not None) else total_amount
-    calc_text = fmt_tl(raw_calc_amount).replace(" ₺", " TL")
-    capped_text = fmt_tl(total_amount).replace(" ₺", " TL")
+    if not dual_mode:
+        total_amount_no90 = total_amount
+        result_group_no90 = result_group
+        normal_total_no90 = normal_total
+        normal_group_no90 = normal_group
+        largest_row_no90 = largest_row
+        three_times_limit_no90 = three_times_limit
+        cap_applied_no90 = cap_applied
 
     experience_rows = [
         ("A", WORK_EXPERIENCE_MIN["A"]),
@@ -624,48 +624,117 @@ def create_experience_pdf(
         ("H", None),
     ]
 
-    # Üst sağ: yalnızca hesaplama sonucu kutusu.
-    calc_data = [
-        [Paragraph("HESAPLAMA SONUCU", center_bold)],
-        [Paragraph(calc_text, value_style)],
-    ]
-
-    if cap_applied:
-        source_parcel = str((largest_row or {}).get("ada_parsel", "-"))
-        source_amount = (largest_row or {}).get("amount", 0)
-        source_text = (
-            f"3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR"
-            f"<br/><font size='7'>"
-            f"Esas alınan inşaat: {source_parcel} - "
-            f"{fmt_tl(source_amount).replace(' ₺', ' TL')} x 3"
-            f"</font>"
-        )
-        calc_data.extend([
-            [Paragraph(source_text, center_bold)],
-            [Paragraph(capped_text, value_style)],
-        ])
-    else:
-        calc_data.append([Paragraph("Dikkate alınan iş deneyim tutarı", center_bold)])
-
-    calc_result = Table(
-        calc_data,
-        colWidths=[122 * mm],
-        hAlign="CENTER",
+    scenario_title_style = ParagraphStyle(
+        "PDFScenarioTitle",
+        parent=center_bold,
+        fontSize=9.3,
+        leading=10.5,
+    )
+    scenario_value_style = ParagraphStyle(
+        "PDFScenarioValue",
+        parent=value_style,
+        fontSize=13.2,
+        leading=14.5,
+    )
+    scenario_group_style = ParagraphStyle(
+        "PDFScenarioGroup",
+        parent=big_result,
+        fontSize=21,
+        leading=22,
+    )
+    tiny_center = ParagraphStyle(
+        "PDFTinyCenter",
+        parent=styles["Normal"],
+        fontName=font_regular,
+        fontSize=6.5,
+        leading=7.5,
+        alignment=TA_CENTER,
+        textColor=colors.black,
     )
 
-    calc_style = [
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("FONTNAME", (0, 0), (-1, -1), font_bold),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 1.8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8),
-    ]
-    if cap_applied:
-        calc_style.append(("LINEABOVE", (0, 2), (-1, 2), 0.55, colors.black))
-    calc_result.setStyle(TableStyle(calc_style))
+    def _scenario_box(label, final_amount, final_group, normal_amount, largest, limit, cap_used, amount_key):
+        display_normal = normal_amount if normal_amount is not None else final_amount
+        rows_local = [
+            [Paragraph(label, scenario_title_style)],
+            [Paragraph(fmt_tl(display_normal).replace(" ₺", " TL"), scenario_value_style)],
+        ]
 
-    # Alt sağ: 2026 asgari iş deneyim tutarları ayrı tablo.
+        if cap_used:
+            source_parcel = str((largest or {}).get("ada_parsel", "-"))
+            source_amount = (largest or {}).get(amount_key, (largest or {}).get("amount", 0))
+            rows_local.extend([
+                [Paragraph(
+                    "3 KATI KURALI SONRASI DİKKATE ALINAN TUTAR",
+                    scenario_title_style,
+                )],
+                [Paragraph(
+                    f"Esas alınan inşaat: {source_parcel}<br/>"
+                    f"{fmt_tl(source_amount).replace(' ₺', ' TL')} x 3",
+                    tiny_center,
+                )],
+                [Paragraph(fmt_tl(final_amount).replace(" ₺", " TL"), scenario_value_style)],
+            ])
+        else:
+            rows_local.append([
+                Paragraph("3 kat sınırı aşılmadı", tiny_center)
+            ])
+
+        rows_local.extend([
+            [Paragraph("ULAŞILABİLEN BELGE GRUBU", scenario_title_style)],
+            [Paragraph(final_group, scenario_group_style)],
+            [Paragraph("GRUBU", scenario_title_style)],
+        ])
+
+        box = Table(rows_local, colWidths=[86 * mm], hAlign="CENTER")
+        box.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+            ("LINEABOVE", (0, 2), (-1, 2), 0.45, colors.black),
+        ]))
+        return box
+
+    box_90 = _scenario_box(
+        "%90 UYGULANIRSA",
+        total_amount,
+        result_group,
+        normal_total,
+        largest_row,
+        three_times_limit,
+        cap_applied,
+        "amount_90",
+    )
+    box_no90 = _scenario_box(
+        "%90 UYGULANMAZSA",
+        total_amount_no90,
+        result_group_no90,
+        normal_total_no90,
+        largest_row_no90,
+        three_times_limit_no90,
+        cap_applied_no90,
+        "amount_no90",
+    )
+
+    story.append(Paragraph("HESAPLAMA SONUÇLARI", section_style))
+    dual_result = Table(
+        [[box_90, box_no90]],
+        colWidths=[88 * mm, 88 * mm],
+        hAlign="LEFT",
+    )
+    dual_result.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(dual_result)
+
+    # Kullanıcının istediği mevcut görsel mesafeyi koru.
+    story.append(Spacer(1, 30 * mm))
+
     threshold_data = [[
         Paragraph(f"{datetime.now().year} YILI ASGARİ İŞ DENEYİM TUTARLARI", center_bold),
         "",
@@ -681,7 +750,7 @@ def create_experience_pdf(
 
     threshold_result = Table(
         threshold_data,
-        colWidths=[39 * mm, 83 * mm],
+        colWidths=[45 * mm, 95 * mm],
         hAlign="CENTER",
     )
 
@@ -700,54 +769,19 @@ def create_experience_pdf(
         ("BOTTOMPADDING", (0, 1), (-1, -1), 0.20),
     ]
 
-    result_threshold_row = 1 + [g for g, _ in experience_rows].index(result_group)
-    threshold_style.extend([
-        ("FONTNAME", (0, result_threshold_row), (-1, result_threshold_row), font_bold),
-        ("LINEABOVE", (0, result_threshold_row), (-1, result_threshold_row), 0.75, colors.black),
-        ("LINEBELOW", (0, result_threshold_row), (-1, result_threshold_row), 0.75, colors.black),
-    ])
+    # Her iki senaryonun ulaştığı grubu tabloda belirginleştir.
+    for grp in {result_group, result_group_no90}:
+        threshold_row = 1 + [g for g, _ in experience_rows].index(grp)
+        threshold_style.extend([
+            ("FONTNAME", (0, threshold_row), (-1, threshold_row), font_bold),
+            ("LINEABOVE", (0, threshold_row), (-1, threshold_row), 0.75, colors.black),
+            ("LINEBELOW", (0, threshold_row), (-1, threshold_row), 0.75, colors.black),
+        ])
+
     threshold_result.setStyle(TableStyle(threshold_style))
 
-    # Düzen iki bağımsız akış bloğuna ayrılır.
-    # Böylece asgari iş deneyim tablosu, sayfada yer varsa 1. sayfada kalır;
-    # gerçekten sığmıyorsa ancak o zaman sonraki sayfaya geçer.
-    #
-    # 1) Hesaplama sonucu + altında 3 cm boşluk içinde belge grubu
-    result_top_table = Table(
-        [
-            [Spacer(1, 1), calc_result],
-            [left_result, Spacer(1, 30 * mm)],
-        ],
-        colWidths=[55 * mm, 125 * mm],
-        rowHeights=[None, 30 * mm],
-        hAlign="LEFT",
-    )
-    result_top_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("VALIGN", (0, 1), (0, 1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(result_top_table)
-
-    # 2) 2026 asgari iş deneyim tablosu ayrı flowable.
-    # Sağ kolonda başlar; önceki büyük tabloya bağlı olmadığı için
-    # mevcut sayfada yeterli alan varsa aynı sayfaya yerleşir.
-    threshold_wrapper = Table(
-        [[Spacer(1, 1), threshold_result]],
-        colWidths=[55 * mm, 125 * mm],
-        hAlign="LEFT",
-    )
-    threshold_wrapper.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(threshold_wrapper)
+    # Ayrı flowable: yer varsa aynı sayfada kalır, sığmazsa sonraki sayfaya geçer.
+    story.append(KeepTogether([threshold_result]))
     story.append(Spacer(1, 1 * mm))
 
     note_box = Table(
@@ -1403,7 +1437,8 @@ elif st.session_state.page == "experience":
         "İlk açılışta normal tek inşaat satırı gelir. "
         "Aynı ada/parselde farklı yapı sınıfında blok/bölüm varsa BLOK EKLE ile ilave satır açabilirsiniz. "
         "Ada/parsel alanına isterseniz blok adını da yazabilirsiniz. "
-        "Aynı inşaat altındaki satırlar birlikte toplanır ve inşaat hissesi uygulanır."
+        "Aynı inşaat altındaki satırlar birlikte toplanır ve inşaat hissesi uygulanır. "
+        "Sonuçlar hem %90 uygulanarak hem de %90 uygulanmadan ayrı ayrı hesaplanır."
     )
 
     # ---------------------------------------------------------
@@ -1412,7 +1447,8 @@ elif st.session_state.page == "experience":
     if method.startswith("1"):
         st.subheader("Son 5 yılda bitirilen inşaatlar")
 
-        total_experience = 0.0
+        total_experience_90 = 0.0
+        total_experience_no90 = 0.0
         entered_projects = 0
         row_results = []       # PDF için blok bazlı satırlar
         project_results = []   # 3 kat kuralı için inşaat/ada-parsel bazlı toplamlar
@@ -1467,7 +1503,8 @@ elif st.session_state.page == "experience":
 
             block_count = min(max(int(st.session_state[block_count_key]), 1), 10)
 
-            project_gross_amount = 0.0
+            project_gross_90 = 0.0
+            project_gross_no90 = 0.0
             project_has_area = False
 
             for j in range(1, block_count + 1):
@@ -1531,10 +1568,20 @@ elif st.session_state.page == "experience":
 
                 if area > 0:
                     project_has_area = True
-                    block_gross = area * unit_cost * 0.85 * 0.90
-                    project_gross_amount += block_gross
 
-                    # PDF'de aynı ada/parsel + hisse görünür; blok sıra bilgisinde ayırt edilir.
+                    # İki senaryo:
+                    # 1) m² x birim maliyet x %85 x %90
+                    # 2) m² x birim maliyet x %85
+                    base_85 = area * unit_cost * 0.85
+                    block_90 = base_85 * 0.90
+                    block_no90 = base_85
+
+                    project_gross_90 += block_90
+                    project_gross_no90 += block_no90
+
+                    share_ratio = share / 100.0
+
+                    # PDF'de iki iş deneyimi tutarı yan yana gösterilir.
                     row_results.append({
                         "row": f"{i}.{j}",
                         "project_id": i,
@@ -1546,7 +1593,9 @@ elif st.session_state.page == "experience":
                         "area": area,
                         "class": bclass,
                         "unit_cost": unit_cost,
-                        "amount": block_gross * (share / 100.0),
+                        "amount": block_90 * share_ratio,
+                        "amount_90": block_90 * share_ratio,
+                        "amount_no90": block_no90 * share_ratio,
                     })
 
                 if j < block_count:
@@ -1572,28 +1621,36 @@ elif st.session_state.page == "experience":
 
             if project_has_area:
                 entered_projects += 1
-                project_amount = project_gross_amount * (share / 100.0)
-                total_experience += project_amount
+                share_ratio = share / 100.0
+                project_amount_90 = project_gross_90 * share_ratio
+                project_amount_no90 = project_gross_no90 * share_ratio
+
+                total_experience_90 += project_amount_90
+                total_experience_no90 += project_amount_no90
 
                 project_results.append({
                     "row": i,
                     "ada_parsel": ada_parsel.strip() or f"{i}. İnşaat",
                     "share": share,
                     "note": construction_note.strip(),
-                    "amount": project_amount,
-                    "gross_amount": project_gross_amount,
+                    "amount": project_amount_90,
+                    "amount_90": project_amount_90,
+                    "amount_no90": project_amount_no90,
+                    "gross_amount_90": project_gross_90,
+                    "gross_amount_no90": project_gross_no90,
                     "block_count": block_count,
                 })
 
-                # Aynı inşaata ait tüm blok/satırlarda, inşaatın hisse sonrası
-                # toplam iş deneyimi PDF'de en sağ sütunda gösterilir.
                 for pdf_row in row_results:
                     if pdf_row.get("project_id") == i:
-                        pdf_row["project_total"] = project_amount
+                        pdf_row["project_total"] = project_amount_90
+                        pdf_row["project_total_90"] = project_amount_90
+                        pdf_row["project_total_no90"] = project_amount_no90
 
                 st.info(
-                    f"**{i}. inşaat dikkate alınan iş deneyimi:** {fmt_tl(project_amount)} "
-                    f"— Hisse: **%{share:g}** — Satır sayısı: **{block_count}**"
+                    f"**{i}. inşaat - %90 uygulanırsa:** {fmt_tl(project_amount_90)}  |  "
+                    f"**%90 uygulanmazsa:** {fmt_tl(project_amount_no90)}  "
+                    f"— Hisse: **%{share:g}**"
                 )
 
             if i < visible_rows:
@@ -1613,61 +1670,82 @@ elif st.session_state.page == "experience":
             st.caption("En fazla 10 inşaat ekleyebilirsiniz.")
 
         if entered_projects > 0:
-            normal_group = work_experience_group(total_experience)
+            # ---------------- %90 UYGULANAN SENARYO ----------------
+            normal_group_90 = work_experience_group(total_experience_90)
+            largest_project_90 = max(project_results, key=lambda x: x["amount_90"])
+            three_times_limit_90 = largest_project_90["amount_90"] * 3
+            capped_experience_90 = min(total_experience_90, three_times_limit_90)
+            capped_group_90 = work_experience_group(capped_experience_90)
+            cap_applied_90 = total_experience_90 > three_times_limit_90
 
-            # 3 kat kuralında blok değil, aynı ada/parseldeki inşaatın
-            # bloklar toplamı ve hisse sonrası iş deneyimi esas alınır.
-            largest_project = max(project_results, key=lambda x: x["amount"])
-            three_times_limit = largest_project["amount"] * 3
-            capped_experience = min(total_experience, three_times_limit)
-            capped_group = work_experience_group(capped_experience)
-            cap_applied = total_experience > three_times_limit
+            # ---------------- %90 UYGULANMAYAN SENARYO --------------
+            normal_group_no90 = work_experience_group(total_experience_no90)
+            largest_project_no90 = max(project_results, key=lambda x: x["amount_no90"])
+            three_times_limit_no90 = largest_project_no90["amount_no90"] * 3
+            capped_experience_no90 = min(total_experience_no90, three_times_limit_no90)
+            capped_group_no90 = work_experience_group(capped_experience_no90)
+            cap_applied_no90 = total_experience_no90 > three_times_limit_no90
 
-            st.markdown(f"""
-            <div class="result-card">
-                <div><b>NORMAL TOPLAM İŞ DENEYİM TUTARI</b></div>
-                <div class="result-number">{fmt_tl(total_experience)}</div>
-                <div>Normal toplama göre: <b>{normal_group} GRUBU</b></div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown("### İki Senaryolu Sonuç")
 
-            st.info(
-                f"**En büyük inşaat deneyimi:** {largest_project['ada_parsel']} "
-                f"(%{largest_project['share']:g} hisse) — "
-                f"{fmt_tl(largest_project['amount'])}\n\n"
-                f"**3 katı üst sınırı:** {fmt_tl(three_times_limit)}"
-            )
+            result_col_90, result_col_no90 = st.columns(2)
 
-            if cap_applied:
+            with result_col_90:
                 st.markdown(f"""
-                <div class="joint-result">
-                    <div><b>3 KATI KURALI UYGULANDI</b></div>
-                    <div style="margin-top:.5rem;">Dikkate alınabilecek iş deneyim tutarı</div>
-                    <div class="result-number">{fmt_tl(capped_experience)}</div>
-                    <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{capped_group} GRUBU</div>
+                <div class="result-card">
+                    <div><b>%90 UYGULANIRSA</b></div>
+                    <div style="font-size:.88rem;margin-top:.35rem;">Normal toplam</div>
+                    <div style="font-size:1.35rem;font-weight:800;">{fmt_tl(total_experience_90)}</div>
+                    <div style="margin-top:.45rem;">Dikkate alınan tutar</div>
+                    <div class="result-number">{fmt_tl(capped_experience_90)}</div>
+                    <div style="font-size:1.8rem;font-weight:800;">{capped_group_90} GRUBU</div>
                 </div>
                 """, unsafe_allow_html=True)
 
-                if normal_group != capped_group:
-                    st.warning(
-                        f"⚠️ **Normalde {normal_group} sınıfı alırsın; ancak en büyük inşaat deneyiminin "
-                        f"3 katını geçememe kuralından dolayı {capped_group} sınıfı alabilirsin.**"
+                if cap_applied_90:
+                    st.caption(
+                        f"3 kat kuralı: {largest_project_90['ada_parsel']} - "
+                        f"{fmt_tl(largest_project_90['amount_90'])} x 3"
                     )
                 else:
-                    st.warning(
-                        f"⚠️ Toplam iş deneyimi 3 kat sınırını aşıyor; dikkate alınan tutar "
-                        f"{fmt_tl(capped_experience)}. Buna rağmen belge sınıfı **{capped_group}** olarak değişmiyor."
+                    st.caption("3 kat sınırı aşılmadı.")
+
+            with result_col_no90:
+                st.markdown(f"""
+                <div class="joint-result">
+                    <div><b>%90 UYGULANMAZSA</b></div>
+                    <div style="font-size:.88rem;margin-top:.35rem;">Normal toplam</div>
+                    <div style="font-size:1.35rem;font-weight:800;">{fmt_tl(total_experience_no90)}</div>
+                    <div style="margin-top:.45rem;">Dikkate alınan tutar</div>
+                    <div class="result-number">{fmt_tl(capped_experience_no90)}</div>
+                    <div style="font-size:1.8rem;font-weight:800;">{capped_group_no90} GRUBU</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if cap_applied_no90:
+                    st.caption(
+                        f"3 kat kuralı: {largest_project_no90['ada_parsel']} - "
+                        f"{fmt_tl(largest_project_no90['amount_no90'])} x 3"
                     )
+                else:
+                    st.caption("3 kat sınırı aşılmadı.")
+
+            if capped_group_90 != capped_group_no90:
+                st.warning(
+                    f"Belge grubu iki hesaba göre değişiyor: "
+                    f"**%90 uygulanırsa {capped_group_90}**, "
+                    f"**%90 uygulanmazsa {capped_group_no90}**. "
+                    f"Başvuruda sözleşme yılına göre geçerli hesap dikkate alınmalıdır."
+                )
             else:
                 st.success(
-                    f"✅ Toplam iş deneyiminiz, en büyük inşaat deneyiminin 3 katı sınırını aşmıyor. "
-                    f"Asgari iş deneyim tutarına göre **{normal_group} grubu** sonucu oluşuyor."
+                    f"Her iki hesapta da sonuç **{capped_group_90} grubu**. "
+                    f"Tutarlar farklı olsa da belge grubu değişmiyor."
                 )
 
             st.caption(
                 "Aynı inşaat altında eklenen tüm satırlar tek inşaat olarak birlikte değerlendirilir. "
-                "İnşaat hissesi bu satırların toplamına uygulanır. "
-                "5 yıllık toplamda 3 kat sınırı, en yüksek hisse sonrası inşaat deneyimi üzerinden hesaplanır."
+                "İnşaat hissesi toplam üzerine uygulanır. 3 kat sınırı her senaryo için ayrı hesaplanır."
             )
 
             pdf_notes = [
@@ -1682,14 +1760,21 @@ elif st.session_state.page == "experience":
             pdf_bytes = create_experience_pdf(
                 method_name="Son 5 yılda bitirilen inşaatların toplamı",
                 rows=row_results,
-                total_amount=capped_experience,
-                result_group=capped_group,
-                normal_total=total_experience,
-                normal_group=normal_group,
-                largest_row=largest_project,
-                three_times_limit=three_times_limit,
-                cap_applied=cap_applied,
+                total_amount=capped_experience_90,
+                result_group=capped_group_90,
+                normal_total=total_experience_90,
+                normal_group=normal_group_90,
+                largest_row=largest_project_90,
+                three_times_limit=three_times_limit_90,
+                cap_applied=cap_applied_90,
                 notes=pdf_notes,
+                total_amount_no90=capped_experience_no90,
+                result_group_no90=capped_group_no90,
+                normal_total_no90=total_experience_no90,
+                normal_group_no90=normal_group_no90,
+                largest_row_no90=largest_project_no90,
+                three_times_limit_no90=three_times_limit_no90,
+                cap_applied_no90=cap_applied_no90,
             )
 
             st.download_button(
@@ -1734,7 +1819,8 @@ elif st.session_state.page == "experience":
             st.session_state.exp15_block_count = 1
 
         block_count = min(max(int(st.session_state.exp15_block_count), 1), 10)
-        project_gross_amount = 0.0
+        project_gross_90 = 0.0
+        project_gross_no90 = 0.0
         single_rows = []
 
         for j in range(1, block_count + 1):
@@ -1795,8 +1881,13 @@ elif st.session_state.page == "experience":
                 )
 
             if area > 0:
-                block_gross = area * unit_cost * 0.85 * 0.90
-                project_gross_amount += block_gross
+                base_85 = area * unit_cost * 0.85
+                block_90 = base_85 * 0.90
+                block_no90 = base_85
+                project_gross_90 += block_90
+                project_gross_no90 += block_no90
+
+                share_ratio = share / 100.0
 
                 single_rows.append({
                     "row": f"1.{j}",
@@ -1809,7 +1900,9 @@ elif st.session_state.page == "experience":
                     "area": area,
                     "class": bclass,
                     "unit_cost": unit_cost,
-                    "amount": block_gross * (share / 100.0) * 2,
+                    "amount": block_90 * share_ratio * 2,
+                    "amount_90": block_90 * share_ratio * 2,
+                    "amount_no90": block_no90 * share_ratio * 2,
                 })
 
             if j < block_count:
@@ -1830,39 +1923,55 @@ elif st.session_state.page == "experience":
             key="exp15_note",
         )
 
-        if project_gross_amount > 0:
-            share_adjusted_amount = project_gross_amount * (share / 100.0)
-            total_experience = share_adjusted_amount * 2
-            result_group = work_experience_group(total_experience)
+        if project_gross_90 > 0:
+            share_ratio = share / 100.0
 
-            # Son 15 yıl yönteminde her satırın sonunda, 2 kat dikkate alınan
-            # tek inşaatın toplam iş deneyimi gösterilir.
+            share_adjusted_90 = project_gross_90 * share_ratio
+            share_adjusted_no90 = project_gross_no90 * share_ratio
+
+            total_experience_90 = share_adjusted_90 * 2
+            total_experience_no90 = share_adjusted_no90 * 2
+
+            result_group_90 = work_experience_group(total_experience_90)
+            result_group_no90 = work_experience_group(total_experience_no90)
+
             for pdf_row in single_rows:
-                pdf_row["project_total"] = total_experience
+                pdf_row["project_total"] = total_experience_90
+                pdf_row["project_total_90"] = total_experience_90
+                pdf_row["project_total_no90"] = total_experience_no90
 
-            st.info(
-                f"**Hisse sonrası tek iş deneyimi:** {fmt_tl(share_adjusted_amount)} "
-                f"— Hisse: **%{share:g}** — Satır sayısı: **{block_count}**"
-            )
+            st.markdown("### İki Senaryolu Sonuç")
+            result_col_90, result_col_no90 = st.columns(2)
 
-            st.markdown(f"""
-            <div class="result-card">
-                <div><b>2 KAT DİKKATE ALINAN İŞ DENEYİM TUTARI</b></div>
-                <div class="result-number">{fmt_tl(total_experience)}</div>
-                <div>Asgari iş deneyim tutarına göre</div>
-                <div style="font-size:1.8rem;font-weight:800;margin-top:.5rem;">{result_group} GRUBU</div>
-            </div>
-            """, unsafe_allow_html=True)
+            with result_col_90:
+                st.markdown(f"""
+                <div class="result-card">
+                    <div><b>%90 UYGULANIRSA</b></div>
+                    <div style="margin-top:.4rem;">2 kat dikkate alınan tutar</div>
+                    <div class="result-number">{fmt_tl(total_experience_90)}</div>
+                    <div style="font-size:1.8rem;font-weight:800;">{result_group_90} GRUBU</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            if result_group != "H":
-                st.success(
-                    f"İki kat dikkate alınan iş deneyim tutarı, iş deneyimi yönünden "
-                    f"**{result_group} grubu** için 2026 asgari tutarı karşılıyor."
+            with result_col_no90:
+                st.markdown(f"""
+                <div class="joint-result">
+                    <div><b>%90 UYGULANMAZSA</b></div>
+                    <div style="margin-top:.4rem;">2 kat dikkate alınan tutar</div>
+                    <div class="result-number">{fmt_tl(total_experience_no90)}</div>
+                    <div style="font-size:1.8rem;font-weight:800;">{result_group_no90} GRUBU</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if result_group_90 != result_group_no90:
+                st.warning(
+                    f"Belge grubu iki hesaba göre değişiyor: "
+                    f"**%90 uygulanırsa {result_group_90}**, "
+                    f"**%90 uygulanmazsa {result_group_no90}**."
                 )
             else:
-                st.info(
-                    "Hesaplanan tutar G1 grubunun 2026 asgari iş deneyim tutarının altında kaldığı için "
-                    "iş deneyimi yönünden sonuç **H grubu** olarak gösterildi."
+                st.success(
+                    f"Her iki hesapta da sonuç **{result_group_90} grubu**."
                 )
 
             pdf_notes = []
@@ -1875,9 +1984,15 @@ elif st.session_state.page == "experience":
             pdf_bytes = create_experience_pdf(
                 method_name="Son 15 yıldaki tek inşaatın 2 kat dikkate alınması",
                 rows=single_rows,
-                total_amount=total_experience,
-                result_group=result_group,
+                total_amount=total_experience_90,
+                result_group=result_group_90,
+                normal_total=total_experience_90,
+                normal_group=result_group_90,
                 notes=pdf_notes,
+                total_amount_no90=total_experience_no90,
+                result_group_no90=result_group_no90,
+                normal_total_no90=total_experience_no90,
+                normal_group_no90=result_group_no90,
             )
 
             st.download_button(
@@ -1902,5 +2017,6 @@ elif st.session_state.page == "experience":
 
     st.caption(
         "Sonuç yalnızca asgari iş deneyim tutarı kriterine göre hesaplanır. "
+        "%90 oranının uygulanıp uygulanmayacağı sözleşme yılı ve ilgili başvuru şartlarına göre değerlendirilmelidir. "
         "Üst gruplarda ekonomik, mali, teknik personel ve diğer yeterlik şartları ayrıca aranabilir."
     )
