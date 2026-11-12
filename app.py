@@ -497,13 +497,6 @@ def create_experience_pdf(
     three_times_limit=None,
     cap_applied=False,
     notes=None,
-    total_amount_no90=None,
-    result_group_no90=None,
-    normal_total_no90=None,
-    normal_group_no90=None,
-    largest_row_no90=None,
-    three_times_limit_no90=None,
-    cap_applied_no90=False,
     total_amount_auto=None,
     result_group_auto=None,
     normal_total_auto=None,
@@ -658,7 +651,7 @@ def create_experience_pdf(
     method_table = Table(
         [
             ["Yöntem", method_name],
-            ["Hesap", Paragraph("Üç sonuç birlikte gösterilir: %90 alt sınır, %90'sız referans ve sözleşme tarihine göre.", small_style)],
+            ["Hesap", Paragraph("İki sonuç birlikte gösterilir: %90 alt sınır ve sözleşme tarihine göre otomatik hesap.", small_style)],
             ["Not", "Toplam tutar, en büyük iş deneyiminin 3 katını geçemez (Yönetmelik)."],
         ],
         colWidths=[30 * mm, 147 * mm],
@@ -689,7 +682,6 @@ def create_experience_pdf(
         "Yapı",
         "m² Maliyeti",
         "İş Deneyimi\n(%90)",
-        "İş Deneyimi\n(%90 Yok)",
         "Sözleşmeye\nGöre",
     ]]
     max_rows = max(len(rows), 1)
@@ -705,7 +697,6 @@ def create_experience_pdf(
                 str(row.get("class", "")),
                 f"{int(row.get('unit_cost', BUILDING_UNIT_COSTS.get(row.get('class'), 0))):,}".replace(",", "."),
                 fmt_tl(row.get("amount_90", row.get("amount", 0))).replace(" ₺", " TL"),
-                fmt_tl(row.get("amount_no90", row.get("amount", 0))).replace(" ₺", " TL"),
                 (fmt_tl(row.get("amount_auto")).replace(" ₺", " TL") if row.get("amount_auto") is not None else "-"),
             ])
 
@@ -736,10 +727,6 @@ def create_experience_pdf(
                     "project_total_90",
                     sum(float(r.get("amount_90", r.get("amount", 0)) or 0) for r in project_rows),
                 )
-                project_experience_total_no90 = row.get(
-                    "project_total_no90",
-                    sum(float(r.get("amount_no90", r.get("amount", 0)) or 0) for r in project_rows),
-                )
                 auto_values = [r.get("amount_auto") for r in project_rows]
                 project_experience_total_auto = row.get("project_total_auto")
                 if project_experience_total_auto is None and all(v is not None for v in auto_values):
@@ -756,17 +743,16 @@ def create_experience_pdf(
                     "",
                     "",
                     fmt_tl(project_experience_total_90).replace(" ₺", " TL"),
-                    fmt_tl(project_experience_total_no90).replace(" ₺", " TL"),
                     (fmt_tl(project_experience_total_auto).replace(" ₺", " TL") if project_experience_total_auto is not None else "-"),
                 ])
                 summary_row_indexes.append(len(data) - 1)
                 project_row_indexes.setdefault(current_project, []).append(len(data) - 1)
     else:
-        data.append(["1", "", "", "", "", "", "", ""])
+        data.append(["1", "", "", "", "", "", ""])
 
     info_table = Table(
         data,
-        colWidths=[8 * mm, 36 * mm, 21 * mm, 14 * mm, 17 * mm, 27 * mm, 27 * mm, 27 * mm],
+        colWidths=[9 * mm, 40 * mm, 23 * mm, 16 * mm, 20 * mm, 34 * mm, 35 * mm],
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -859,15 +845,6 @@ def create_experience_pdf(
         story.append(Spacer(1, 1.5 * mm))
 
     # Result section - üç sonuç birlikte gösterilir.
-    if total_amount_no90 is None:
-        total_amount_no90 = total_amount
-        result_group_no90 = result_group
-        normal_total_no90 = normal_total
-        normal_group_no90 = normal_group
-        largest_row_no90 = largest_row
-        three_times_limit_no90 = three_times_limit
-        cap_applied_no90 = cap_applied
-
     experience_rows = [
         ("A", WORK_EXPERIENCE_MIN["A"]), ("B", WORK_EXPERIENCE_MIN["B"]),
         ("B1", WORK_EXPERIENCE_MIN["B1"]), ("C", WORK_EXPERIENCE_MIN["C"]),
@@ -934,11 +911,10 @@ def create_experience_pdf(
         return box
 
     box_90 = _scenario_box("%90 ALT SINIR", total_amount, result_group, normal_total, largest_row, cap_applied, "amount_90")
-    box_no90 = _scenario_box("%90 UYGULANMAZSA", total_amount_no90, result_group_no90, normal_total_no90, largest_row_no90, cap_applied_no90, "amount_no90")
     box_auto = _scenario_box("SÖZLEŞME TARİHİNE GÖRE", total_amount_auto, result_group_auto, normal_total_auto, largest_row_auto, cap_applied_auto, "amount_auto", auto=True)
 
     story.append(Paragraph("HESAPLAMA SONUÇLARI", section_style))
-    result_table = Table([[box_90, box_no90, box_auto]], colWidths=[58 * mm, 58 * mm, 58 * mm], hAlign="LEFT")
+    result_table = Table([[box_90, box_auto]], colWidths=[87 * mm, 87 * mm], hAlign="LEFT")
     result_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -968,7 +944,7 @@ def create_experience_pdf(
         ("TOPPADDING", (0, 1), (-1, -1), 0.20),
         ("BOTTOMPADDING", (0, 1), (-1, -1), 0.20),
     ]
-    for grp in {g for g in (result_group, result_group_no90, result_group_auto) if g}:
+    for grp in {g for g in (result_group, result_group_auto) if g}:
         threshold_row = 1 + [g for g, _ in experience_rows].index(grp)
         threshold_style.extend([
             ("FONTNAME", (0, threshold_row), (-1, threshold_row), font_bold),
@@ -1637,7 +1613,7 @@ elif st.session_state.page == "experience":
         )
 
     st.caption(
-        "Sonuçlar üç şekilde gösterilir: %90 alt sınır, %90 uygulanmayan referans ve "
+        "Sonuçlar iki şekilde gösterilir: %90 alt sınır ve "
         "sözleşme tarihine göre Yİ-ÜFE + %90/%130 sınırlarıyla otomatik güncellenen tutar."
     )
 
@@ -1648,7 +1624,6 @@ elif st.session_state.page == "experience":
         st.subheader("Son 5 yılda bitirilen inşaatlar")
 
         total_90 = 0.0
-        total_no90 = 0.0
         total_auto = 0.0
         auto_all_valid = True
         entered_projects = 0
@@ -1704,7 +1679,6 @@ elif st.session_state.page == "experience":
             block_count = min(max(int(st.session_state[block_count_key]), 1), 10)
 
             gross_90 = 0.0
-            gross_no90 = 0.0
             gross_auto = 0.0
             project_auto_valid = True
             project_has_area = False
@@ -1766,9 +1740,7 @@ elif st.session_state.page == "experience":
                     project_has_area = True
                     base_85 = area * current_cost * 0.85
                     block_90 = base_85 * 0.90
-                    block_no90 = base_85
                     gross_90 += block_90
-                    gross_no90 += block_no90
 
                     auto_calc = date_based_block_calculation(
                         area, current_cost, contract_cost, contract_date, application_date,
@@ -1799,7 +1771,6 @@ elif st.session_state.page == "experience":
                         "area": area, "class": bclass, "unit_cost": current_cost,
                         "amount": block_90 * share_ratio,
                         "amount_90": block_90 * share_ratio,
-                        "amount_no90": block_no90 * share_ratio,
                         "amount_auto": (block_auto * share_ratio if block_auto is not None else None),
                     })
 
@@ -1821,10 +1792,8 @@ elif st.session_state.page == "experience":
                 entered_projects += 1
                 share_ratio = share / 100.0
                 amount_90 = gross_90 * share_ratio
-                amount_no90 = gross_no90 * share_ratio
                 amount_auto = gross_auto * share_ratio if project_auto_valid else None
                 total_90 += amount_90
-                total_no90 += amount_no90
                 if amount_auto is not None:
                     total_auto += amount_auto
                 else:
@@ -1835,19 +1804,18 @@ elif st.session_state.page == "experience":
                     "share": share, "note": construction_note.strip(),
                     "contract_date": contract_date,
                     "amount": amount_90, "amount_90": amount_90,
-                    "amount_no90": amount_no90, "amount_auto": amount_auto,
+                    "amount_auto": amount_auto,
                     "block_count": block_count,
                 })
                 for pdf_row in row_results:
                     if pdf_row.get("project_id") == i:
                         pdf_row["project_total"] = amount_90
                         pdf_row["project_total_90"] = amount_90
-                        pdf_row["project_total_no90"] = amount_no90
                         pdf_row["project_total_auto"] = amount_auto
 
                 auto_text = fmt_tl(amount_auto) if amount_auto is not None else "HESAPLANAMADI"
                 st.info(
-                    f"**{i}. inşaat:** %90 = {fmt_tl(amount_90)} | %90 yok = {fmt_tl(amount_no90)} | "
+                    f"**{i}. inşaat:** %90 alt sınır = {fmt_tl(amount_90)} | "
                     f"**Sözleşme tarihine göre = {auto_text}**"
                 )
 
@@ -1871,14 +1839,6 @@ elif st.session_state.page == "experience":
             group_90 = work_experience_group(final_90)
             cap_90 = total_90 > limit_90
 
-            # %90 yok
-            normal_group_no90 = work_experience_group(total_no90)
-            largest_no90 = max(project_results, key=lambda x: x["amount_no90"])
-            limit_no90 = largest_no90["amount_no90"] * 3
-            final_no90 = min(total_no90, limit_no90)
-            group_no90 = work_experience_group(final_no90)
-            cap_no90 = total_no90 > limit_no90
-
             # Sözleşme tarihine göre otomatik
             if auto_all_valid and all(p.get("amount_auto") is not None for p in project_results):
                 normal_group_auto = work_experience_group(total_auto)
@@ -1896,7 +1856,7 @@ elif st.session_state.page == "experience":
                 cap_auto = False
 
             st.markdown("### Hesaplama Sonuçları")
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"""
                 <div class="result-card"><div><b>%90 ALT SINIR</b></div>
@@ -1905,13 +1865,6 @@ elif st.session_state.page == "experience":
                 """, unsafe_allow_html=True)
                 st.caption(f"Normal toplam: {fmt_tl(total_90)}" + (f" | 3 kat: {largest_90['ada_parsel']}" if cap_90 else " | 3 kat sınırı aşılmadı"))
             with c2:
-                st.markdown(f"""
-                <div class="joint-result"><div><b>%90 UYGULANMAZSA</b></div>
-                <div class="result-number">{fmt_tl(final_no90)}</div>
-                <div style="font-size:1.65rem;font-weight:800;">{group_no90} GRUBU</div></div>
-                """, unsafe_allow_html=True)
-                st.caption(f"Normal toplam: {fmt_tl(total_no90)}" + (f" | 3 kat: {largest_no90['ada_parsel']}" if cap_no90 else " | 3 kat sınırı aşılmadı"))
-            with c3:
                 if final_auto is not None:
                     st.markdown(f"""
                     <div style="padding:1.25rem;border-radius:20px;background:#fff7e8;border:1px solid #efd49d;text-align:center;margin:1rem 0;">
@@ -1939,9 +1892,6 @@ elif st.session_state.page == "experience":
                 normal_total=total_90, normal_group=normal_group_90,
                 largest_row=largest_90, three_times_limit=limit_90, cap_applied=cap_90,
                 notes=pdf_notes,
-                total_amount_no90=final_no90, result_group_no90=group_no90,
-                normal_total_no90=total_no90, normal_group_no90=normal_group_no90,
-                largest_row_no90=largest_no90, three_times_limit_no90=limit_no90, cap_applied_no90=cap_no90,
                 total_amount_auto=final_auto, result_group_auto=group_auto,
                 normal_total_auto=total_auto if final_auto is not None else None,
                 normal_group_auto=normal_group_auto, largest_row_auto=largest_auto,
@@ -1981,7 +1931,7 @@ elif st.session_state.page == "experience":
         if "exp15_block_count" not in st.session_state:
             st.session_state.exp15_block_count = 1
         block_count = min(max(int(st.session_state.exp15_block_count), 1), 10)
-        gross_90 = gross_no90 = gross_auto = 0.0
+        gross_90 = gross_auto = 0.0
         auto_valid = True
         single_rows = []
 
@@ -2024,9 +1974,8 @@ elif st.session_state.page == "experience":
 
             if area > 0:
                 base_85 = area * current_cost * 0.85
-                b90, bno90 = base_85 * 0.90, base_85
+                b90 = base_85 * 0.90
                 gross_90 += b90
-                gross_no90 += bno90
                 auto_calc = date_based_block_calculation(area, current_cost, contract_cost, contract_date, application_date, yiufe_series, yiufe_live)
                 if auto_calc:
                     bauto = auto_calc["amount"]
@@ -2044,7 +1993,6 @@ elif st.session_state.page == "experience":
                     "ada_parsel": f"{row_ada_parsel.strip() or ada_parsel.strip() or '1. İnşaat'} (%{share:g})<br/><font size='5'>Söz: {contract_date.strftime('%d.%m.%Y')}</font>",
                     "area": area, "class": bclass, "unit_cost": current_cost,
                     "amount": b90 * sr * 2, "amount_90": b90 * sr * 2,
-                    "amount_no90": bno90 * sr * 2,
                     "amount_auto": (bauto * sr * 2 if bauto is not None else None),
                 })
             if j < block_count:
@@ -2060,23 +2008,19 @@ elif st.session_state.page == "experience":
         if gross_90 > 0:
             sr = share / 100.0
             total_90 = gross_90 * sr * 2
-            total_no90 = gross_no90 * sr * 2
             total_auto = gross_auto * sr * 2 if auto_valid else None
             group_90 = work_experience_group(total_90)
-            group_no90 = work_experience_group(total_no90)
             group_auto = work_experience_group(total_auto) if total_auto is not None else None
             for r in single_rows:
                 r["project_total"] = total_90
                 r["project_total_90"] = total_90
-                r["project_total_no90"] = total_no90
                 r["project_total_auto"] = total_auto
 
             st.markdown("### Hesaplama Sonuçları")
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             for col, title, amount, grp, bg in [
                 (c1, "%90 ALT SINIR", total_90, group_90, "#eef8f1"),
-                (c2, "%90 UYGULANMAZSA", total_no90, group_no90, "#eef4ff"),
-                (c3, "SÖZLEŞME TARİHİNE GÖRE", total_auto, group_auto, "#fff7e8"),
+                (c2, "SÖZLEŞME TARİHİNE GÖRE", total_auto, group_auto, "#fff7e8"),
             ]:
                 with col:
                     if amount is not None:
@@ -2092,7 +2036,6 @@ elif st.session_state.page == "experience":
                 rows=single_rows,
                 total_amount=total_90, result_group=group_90, normal_total=total_90, normal_group=group_90,
                 notes=pdf_notes,
-                total_amount_no90=total_no90, result_group_no90=group_no90, normal_total_no90=total_no90, normal_group_no90=group_no90,
                 total_amount_auto=total_auto, result_group_auto=group_auto, normal_total_auto=total_auto, normal_group_auto=group_auto,
             )
             st.download_button(
